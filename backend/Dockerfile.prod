@@ -1,0 +1,47 @@
+FROM python:3.12-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV DJANGO_SETTINGS_MODULE core.settings.prod
+
+# Set working directory
+WORKDIR /app
+
+# Create a non-root user
+RUN groupadd -r django && useradd -r -g django django
+
+# Install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy entrypoint script
+COPY entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh
+
+# Copy project files
+COPY . /app/
+
+# Create folders for static/media files and adjust ownership
+RUN mkdir -p /app/staticfiles /app/media \
+    && chown -R django:django /app
+
+# Switch to non-root user for security
+USER django
+
+# Set entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Expose Django port
+EXPOSE 8000
+
+# Default command for production using Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--access-logfile", "-", "core.wsgi:application"]

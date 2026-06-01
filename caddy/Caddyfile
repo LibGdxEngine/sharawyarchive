@@ -1,0 +1,23 @@
+{$DOMAIN_NAME:http://localhost} {
+    # Compress responses
+    encode gzip zstd
+
+    # Route NextAuth endpoints to Next.js frontend
+    reverse_proxy /api/auth/* frontend:3000
+
+    # Reverse proxy backend endpoints
+    reverse_proxy /api/* backend:8000
+    reverse_proxy /admin/* backend:8000
+    reverse_proxy /static/* backend:8000
+    reverse_proxy /media/* backend:8000
+
+    # Reverse proxy all other requests to Next.js standalone server
+    reverse_proxy /* frontend:3000
+
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -91,6 +92,39 @@ def test_a_repeat_request_reports_the_current_status(
 
     assert response.status_code == 200
     assert response.json() == {'id': created['id'], 'status': 'rendering'}
+
+
+def test_a_failed_clip_is_queued_again_exactly_once(
+    api: APIClient,
+    archive: Archive,
+    monkeypatch: pytest.MonkeyPatch,
+    django_capture_on_commit_callbacks: Any,
+) -> None:
+    """A failure is usually transient, so asking again retries — but the retry
+    reads and writes the same row, so it happens under ``select_for_update``.
+    Without the lock, two requests both see ``failed``, both flip it to
+    ``queued`` and both enqueue, and two workers render the same clip over the
+    same object key."""
+    enqueued: list[str] = []
+    monkeypatch.setattr(
+        'clips.views.render_clip', SimpleNamespace(delay=enqueued.append)
+    )
+    created = api.post(URL, _body(archive), format='json').json()
+    Clip.objects.filter(pk=created['id']).update(status=ClipStatus.FAILED, error='boom')
+
+    responses = []
+    for _ in range(2):
+        # The enqueue is deferred to commit, which never happens inside a test
+        # transaction unless it is captured.
+        with django_capture_on_commit_callbacks(execute=True):
+            responses.append(api.post(URL, _body(archive), format='json'))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert [response.json()['status'] for response in responses] == ['queued', 'queued']
+    assert len(enqueued) == 1  # the second request found it already re-queued
+    assert enqueued == [created['id']]
+    clip = Clip.objects.get(pk=created['id'])
+    assert (clip.status, clip.error) == (ClipStatus.QUEUED, '')
 
 
 def test_a_different_preset_is_a_different_job(api: APIClient, archive: Archive) -> None:

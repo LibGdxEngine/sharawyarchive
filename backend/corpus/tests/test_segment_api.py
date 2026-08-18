@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
 from rest_framework.test import APIClient
 
-from api.cache import IMMUTABLE
+from api.cache import IMMUTABLE, PRIVATE_SHORT
 from api.tests.factories import WORD_TEXTS, Archive
 
 pytestmark = pytest.mark.django_db
@@ -41,6 +40,15 @@ def _keys(payload: Any) -> set[str]:
     return set()
 
 
+def _values(payload: Any) -> set[str]:
+    """Every string *value* anywhere in a JSON payload."""
+    if isinstance(payload, dict):
+        return {value for item in payload.values() for value in _values(item)}
+    if isinstance(payload, list):
+        return {value for item in payload for value in _values(item)}
+    return {payload} if isinstance(payload, str) else set()
+
+
 # --- GET /api/segments/{id}/ -------------------------------------------------
 
 
@@ -48,7 +56,9 @@ def test_segment_detail_returns_the_contract_shape(api: APIClient, archive: Arch
     response = api.get(f'/api/segments/{archive.segment.pk}/')
 
     assert response.status_code == 200
-    assert response.headers['Cache-Control'] == IMMUTABLE
+    # Not immutable: the body carries six-hour presigned URLs, so it is
+    # private and short-lived (API_CONTRACT.md amendment 4).
+    assert response.headers['Cache-Control'] == PRIVATE_SHORT
     body = response.json()
     assert set(body) == SEGMENT_KEYS
     assert body['id'] == archive.segment.pk
@@ -72,12 +82,24 @@ def test_segment_detail_serves_presigned_media_urls(api: APIClient, archive: Arc
 
 
 def test_segment_detail_never_leaks_storage_internals(api: APIClient, archive: Archive) -> None:
-    """CLAUDE.md rule 4: no raw bucket paths, no content hashes as data."""
+    """CLAUDE.md rule 4: no raw bucket paths, no content hashes as data.
+
+    What the contract forbids is a *field* a client can read a key or a hash
+    out of — something to store, to derive another key from, or to rebuild a
+    bucket path with. A presigned URL is not that: it necessarily contains the
+    path of the one object it signs, which is what makes it a signature, and it
+    expires. So the assertion is that no key or hash appears as a field name or
+    as a value, and the URL is checked for what it is instead.
+    """
     body = api.get(f'/api/segments/{archive.segment.pk}/').json()
 
     assert _keys(body).isdisjoint({'sha256', 'storage_key', 'audio', 'audio_key'})
-    payload = json.dumps(body, ensure_ascii=False)
-    assert archive.audio.storage_key not in payload
+    assert _values(body).isdisjoint({archive.audio.storage_key, archive.audio.sha256})
+    # The factory's storage_key is the key the API really serves, so the
+    # assertion above had a genuine candidate to find.
+    assert archive.audio.storage_key == f'audio/{archive.audio.sha256}.opus'
+    assert archive.audio.storage_key in body['audio_url']  # inside the signature
+    assert 'X-Amz-Signature=' in body['audio_url']
     for field in ('duration_ms', 'ordinal', 'id'):
         assert field in body  # sanity: we are inspecting the real payload
 
@@ -103,7 +125,7 @@ def test_reviewed_transcript_surfaces_on_the_segment(api: APIClient, archive: Ar
 def test_unknown_segment_is_404(api: APIClient, archive: Archive) -> None:
     response = api.get('/api/segments/999999/')
     assert response.status_code == 404
-    assert response.headers.get('Cache-Control') != IMMUTABLE
+    assert 'Cache-Control' not in response.headers
 
 
 # --- GET /api/segments/{id}/transcript/ --------------------------------------

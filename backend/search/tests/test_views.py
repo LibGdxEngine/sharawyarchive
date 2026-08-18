@@ -110,6 +110,7 @@ def test_page_selects_a_later_slice(api: APIClient, indexed_corpus: CorpusFixtur
         {"q": "الصبر", "surah": "two"},
         {"q": "الصبر", "page": "0"},
         {"q": "الصبر", "page": "last"},
+        {"q": "الصبر", "page": "500000"},  # would be a 5M-row vector scan
     ],
 )
 def test_bad_requests_are_rejected(

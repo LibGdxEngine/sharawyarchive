@@ -5,14 +5,20 @@ from __future__ import annotations
 import pytest
 from rest_framework.test import APIClient
 
-from api.cache import IMMUTABLE
+from api.cache import PUBLIC_SHORT
 from api.tests.factories import Archive, make_topic
+from corpus.models import Chunk
+from corpus.views import TOPIC_CHUNK_LIMIT
 
 from .test_related_api import RESULT_KEYS
 
 pytestmark = pytest.mark.django_db
 
 TOPIC_KEYS = {'slug', 'name_ar', 'description_ar', 'chunk_count'}
+
+OFFSET_IDX = 100
+"""Clear of the archive fixture's own chunk indices — ``(transcript, idx)`` is
+unique."""
 
 
 def test_topic_list_returns_the_contract_shape(api: APIClient, archive: Archive) -> None:
@@ -21,7 +27,9 @@ def test_topic_list_returns_the_contract_shape(api: APIClient, archive: Archive)
     response = api.get('/api/topics/')
 
     assert response.status_code == 200
-    assert response.headers['Cache-Control'] == IMMUTABLE
+    # Publishing is an editorial decision that has to be able to reverse, so
+    # topics are cacheable but never immutable (API_CONTRACT.md amendment 4).
+    assert response.headers['Cache-Control'] == PUBLIC_SHORT
     (row,) = response.json()
     assert set(row) == TOPIC_KEYS
     assert row['slug'] == 'sabr'
@@ -42,7 +50,7 @@ def test_topic_detail_carries_its_passages(api: APIClient, archive: Archive) -> 
     response = api.get('/api/topics/sabr/')
 
     assert response.status_code == 200
-    assert response.headers['Cache-Control'] == IMMUTABLE
+    assert response.headers['Cache-Control'] == PUBLIC_SHORT
     body = response.json()
     assert set(body) == TOPIC_KEYS | {'chunks'}
     assert body['chunk_count'] == len(archive.chunks)
@@ -79,3 +87,33 @@ def test_a_topic_without_passages_is_still_served(api: APIClient, archive: Archi
     body = api.get('/api/topics/sabr/').json()
 
     assert (body['chunk_count'], body['chunks']) == (0, [])
+
+
+def test_a_large_topic_is_capped_but_still_counts_honestly(
+    api: APIClient, archive: Archive
+) -> None:
+    """The endpoint has no pagination, so an unbounded topic would make one
+    slug a request for the whole corpus. ``chunk_count`` still tells the truth
+    about how big the topic is."""
+    oversized = TOPIC_CHUNK_LIMIT + 5
+    passages = Chunk.objects.bulk_create(
+        Chunk(
+            transcript=archive.transcript,
+            idx=OFFSET_IDX + index,
+            text=f'مقطع رقم {index}',
+            text_normalized=f'مقطع رقم {index}',
+            start_ms=index * 30_000,
+            end_ms=(index + 1) * 30_000,
+        )
+        for index in range(oversized)
+    )
+    make_topic(passages)
+
+    body = api.get('/api/topics/sabr/').json()
+
+    assert len(body['chunks']) == TOPIC_CHUNK_LIMIT
+    assert body['chunk_count'] == oversized
+    # Best-scoring first, and it is the *top* of the list that survives the cap.
+    assert [chunk['chunk_id'] for chunk in body['chunks']] == [
+        chunk.pk for chunk in passages[:TOPIC_CHUNK_LIMIT]
+    ]

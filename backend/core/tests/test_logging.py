@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 
 import pytest
 
@@ -52,6 +53,20 @@ class TestJSONFormatter:
         assert data["logger"] == "test.logger"
         assert data["message"] == "test message"
         assert "timestamp" in data
+
+    def test_timestamp_is_a_parseable_utc_instant(self, formatter: JSONFormatter) -> None:
+        """A log line's timestamp has to survive a round trip through a log
+        pipeline. ``formatTime`` used to be given a ``%f`` that ``time.strftime``
+        does not understand, so every record carried a literal ``"%f"`` where
+        its sub-second digits should have been, and nothing could parse it."""
+        record = _make_record("timed")
+
+        stamp = json.loads(formatter.format(record))["timestamp"]
+
+        parsed = datetime.fromisoformat(stamp)  # must not raise
+        assert parsed.utcoffset() == UTC.utcoffset(None)
+        assert parsed == datetime.fromtimestamp(record.created, tz=UTC)
+        assert "%" not in stamp
 
     def test_valid_json(self, formatter: JSONFormatter) -> None:
         record = _make_record("valid json check")

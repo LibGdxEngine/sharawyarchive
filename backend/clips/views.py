@@ -42,21 +42,32 @@ class ClipCreateView(APIView):
     def post(self, request: Request) -> Response:
         serializer = ClipCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        clip, created = Clip.objects.get_or_create(**serializer.validated_data)
-        if created or clip.status == ClipStatus.FAILED:
-            # A queued, rendering or finished job is left strictly alone — that
-            # is the cache doing its work. A *failed* one is re-queued once per
-            # request instead: the failure is usually transient (a worker died,
-            # storage blinked) and the alternative is a permanently dead clip
-            # that nobody can ever ask for again, because the unique constraint
-            # hands every later request the same broken row.
+        with transaction.atomic():
+            clip, created = Clip.objects.get_or_create(**serializer.validated_data)
+            requeued = False
             if not created:
-                clip.status = ClipStatus.QUEUED
-                clip.error = ''
-                clip.save(update_fields=['status', 'error'])
-            # After commit, or the worker races the transaction and looks up a
-            # row that is not there yet.
-            transaction.on_commit(lambda: render_clip.delay(str(clip.pk)))
+                # Re-read the row under a lock. Read-committed means two
+                # requests arriving on the same failed clip both see `failed`
+                # and both enqueue a render, so the same ffmpeg job runs twice
+                # and two workers write the same object. The lock serialises
+                # them: the second one wakes up to `queued` and does nothing.
+                clip = Clip.objects.select_for_update().get(pk=clip.pk)
+                if clip.status == ClipStatus.FAILED:
+                    # A queued, rendering or finished job is left strictly
+                    # alone — that is the cache doing its work. A *failed* one
+                    # is re-queued instead: the failure is usually transient (a
+                    # worker died, storage blinked) and the alternative is a
+                    # permanently dead clip nobody can ever ask for again,
+                    # because the unique constraint hands every later request
+                    # the same broken row.
+                    clip.status = ClipStatus.QUEUED
+                    clip.error = ''
+                    clip.save(update_fields=['status', 'error'])
+                    requeued = True
+            if created or requeued:
+                # After commit, or the worker races the transaction and looks
+                # up a row that is not there yet.
+                transaction.on_commit(lambda: render_clip.delay(str(clip.pk)))
         return Response(
             ClipStatusSerializer(clip).data,
             status=status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK,

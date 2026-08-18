@@ -1,9 +1,13 @@
 """Fixtures for the search suite.
 
-Two things need isolating. Meilisearch is a shared server, so every test that
+Three things need isolating. Meilisearch is a shared server, so every test that
 touches it gets its own ``MEILI_INDEX_PREFIX`` and deletes the index afterwards.
 The Quran rows are created per test rather than relying on a fully imported
-corpus, so the suite runs against an empty database.
+corpus, so the suite runs against an empty database. And throttle history lives
+in Redis now rather than in per-process memory, so it outlives not just a test
+but the whole run — hence ``reset_throttles``, re-exported here so that this
+suite's twenty-odd search requests cannot spend the 30/min budget of the next
+run.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import pytest
 from meilisearch.errors import MeilisearchApiError
 from pytest_django.fixtures import Settings
 
+from api.tests.factories import reset_throttles  # noqa: F401
 from corpus.arabic import normalize_for_index
 from corpus.embeddings import StubEmbedder
 from corpus.models import AudioAsset, Chunk, Segment, SegmentKind, Source, Transcript

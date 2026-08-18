@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 
 
 class JSONFormatter(logging.Formatter):
@@ -33,7 +34,11 @@ class JSONFormatter(logging.Formatter):
         record.getMessage()
 
         payload: dict[str, object] = {
-            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S.%f+00:00"),
+            # Not formatTime(): it goes through time.strftime, which has no
+            # %f, so sub-second precision came out as the literal "%f" and the
+            # whole timestamp was unparseable. datetime does the ISO-8601
+            # formatting itself, in UTC, microseconds included.
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

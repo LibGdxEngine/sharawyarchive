@@ -68,7 +68,9 @@ def test_the_play_link_points_at_the_corrected_seconds(
 
     rendered = correction_admin.play_range(correction)
 
-    assert "#t=12.000" in rendered  # media fragment, seconds
+    # Both bounds in the media fragment: a reviewer judging a three-word fix
+    # has to hear those three words and then stop, not run on into the episode.
+    assert 'href="' in rendered and "#t=12.000,14.900" in rendered
     assert "12000" in rendered and "14900" in rendered  # the exact ms
     assert "X-Amz-Signature" in rendered  # presigned, never a bucket path
     assert correction_admin.word_range(correction) == "12–14"

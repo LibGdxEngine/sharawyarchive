@@ -48,8 +48,15 @@ if SECURE_SSL_REDIRECT:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
-# Sitemap base URL (no trailing slash).
-SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "http://localhost:3000")
+# ---------------------------------------------------------------------------
+# Engines: a production deploy must never run on the stub ASR/embedding
+# backends. base.py defaults both to 'stub', so an operator who follows
+# DEPLOY.md without exporting them would otherwise index fabricated speech and
+# attribute it to the Sheikh (CLAUDE.md rule 1). Refuse to boot instead.
+# ---------------------------------------------------------------------------
+from core.engines_guard import check_engines  # noqa: E402
+
+check_engines(os.environ)
 
 # ---------------------------------------------------------------------------
 # Structured JSON logging

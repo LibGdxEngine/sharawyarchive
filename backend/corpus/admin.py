@@ -129,11 +129,15 @@ class CorrectionAdmin(admin.ModelAdmin):
 
     @admin.display(description="play range")
     def play_range(self, correction: Correction) -> str:
-        """A link straight to the second the words are spoken.
+        """A link straight to the seconds the words are spoken.
 
         The href is a presigned URL (rule 4) with a media fragment, so the
-        browser's own player seeks there; the millisecond bounds are spelled
-        out next to it because the fragment has to be seconds.
+        browser's own player seeks there. The fragment carries *both* bounds
+        (``#t=start,end``): with only a start, the reviewer's player runs on
+        past the correction into the rest of the episode, and judging a
+        three-word fix means hearing those three words and stopping. The
+        millisecond bounds are spelled out next to it because the fragment has
+        to be seconds.
         """
         span = corrections.word_span_ms(correction)
         if span is None:
@@ -141,10 +145,11 @@ class CorrectionAdmin(admin.ModelAdmin):
         start_ms, end_ms = span
         segment = correction.chunk.transcript.segment
         return format_html(
-            '<a href="{}#t={}" target="_blank" rel="noopener">▶ اسمع</a> '
+            '<a href="{}#t={},{}" target="_blank" rel="noopener">▶ اسمع</a> '
             "<small>{}–{} ms</small>",
             presigned_url(audio_key(segment.audio.sha256)),
             f"{start_ms / 1000:.3f}",
+            f"{end_ms / 1000:.3f}",
             start_ms,
             end_ms,
         )

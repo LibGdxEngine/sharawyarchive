@@ -27,14 +27,17 @@ normalized.
 
 from __future__ import annotations
 
+import logging
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
 import meilisearch
 from django.conf import settings
+from django.db import DatabaseError, connection, transaction
 from django.db.models import QuerySet
 from meilisearch.errors import MeilisearchApiError
 from pgvector.django import CosineDistance
@@ -55,13 +58,17 @@ __all__ = [
     "chunks_index_name",
     "delete_segment_chunks",
     "ensure_chunks_index",
+    "hnsw_scan",
     "index_chunks",
     "lexical_search",
+    "nearest_chunks",
     "parse_ayah_reference",
     "rrf_merge",
     "search",
     "semantic_search",
 ]
+
+logger = logging.getLogger(__name__)
 
 # --- Tunables ----------------------------------------------------------------
 
@@ -76,8 +83,20 @@ DEFAULT_MODE = "hybrid"
 
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 50
+MAX_PAGE = 100
+"""Deep pagination is a vector-scan amplifier: page N costs a LIMIT of
+``N * page_size`` rows through the ANN index, so an unbounded ``page`` turns one
+anonymous GET into a multi-million-row scan (API_CONTRACT.md amendment 2).
+The cap bounds retrieval depth at ``MAX_PAGE * MAX_PAGE_SIZE``."""
+
 CANDIDATE_POOL = 100
 """How deep each retrieval path goes before fusion and pagination."""
+
+HNSW_MIN_EF_SEARCH = 40
+"""pgvector's own default; never search *less* deeply than stock."""
+
+HNSW_MAX_EF_SEARCH = 1000
+"""Past this the index scan costs more than the sequential scan it replaces."""
 
 INDEX_BATCH_SIZE = 1000
 TASK_TIMEOUT_MS = 30_000
@@ -288,6 +307,54 @@ def lexical_search(
     return hits, int(response.get("estimatedTotalHits", len(hits)))
 
 
+@contextmanager
+def hnsw_scan(depth: int) -> Iterator[None]:
+    """Run the enclosed block with an HNSW scan deep enough to fill ``depth``.
+
+    An approximate index scan visits a fixed number of candidates
+    (``hnsw.ef_search``, 40 by default) and *then* the rest of the plan applies
+    whatever predicate sits above it. Anything filtered up there — most
+    sharply ``/related/``'s "every segment but this one" — has its rows thrown
+    away after the scan already committed to them, and comes back with fewer
+    than ``LIMIT``, sometimes zero, with no error anywhere to say so. Two
+    settings fix that:
+
+    ``hnsw.ef_search``
+        raised to ``depth``, so the scan starts out wide enough for the page
+        being asked for, clamped to :data:`HNSW_MIN_EF_SEARCH` ..
+        :data:`HNSW_MAX_EF_SEARCH`.
+    ``hnsw.iterative_scan``
+        ``relaxed_order``, which lets pgvector *keep going* when the filter
+        eats the first batch instead of stopping at ``ef_search`` candidates.
+        This is the setting that makes a selective filter correct rather than
+        merely luckier.
+
+    Both are ``SET LOCAL``, so they die with the transaction and never leak
+    onto the next request sharing the connection — which is also why the
+    queryset has to be **evaluated inside the block** (``list(...)``, not a
+    lazy queryset returned out of it).
+
+    ``iterative_scan`` arrived in pgvector 0.8; on an older server the SET is
+    rolled back to the savepoint and the block runs with the wider
+    ``ef_search`` alone, which is a smaller improvement rather than a failure.
+    """
+    ef_search = min(max(int(depth), HNSW_MIN_EF_SEARCH), HNSW_MAX_EF_SEARCH)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL hnsw.ef_search = %s", [ef_search])
+        try:
+            # Savepointed: a rejected SET would otherwise poison the whole
+            # transaction, taking the query with it.
+            with transaction.atomic(), connection.cursor() as cursor:
+                cursor.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+        except DatabaseError:
+            logger.warning(
+                "hnsw.iterative_scan is unavailable (pgvector < 0.8); filtered "
+                "semantic queries may return fewer rows than requested"
+            )
+        yield
+
+
 def semantic_queryset(
     query: str,
     *,
@@ -297,8 +364,9 @@ def semantic_queryset(
 ) -> QuerySet[Chunk]:
     """Chunks ordered by cosine distance to the embedded ``query``.
 
-    Ordering is by the distance expression alone so PostgreSQL can answer it
-    from the ``chunk_embedding_hnsw`` index instead of sorting the table.
+    Lazy on purpose — :func:`semantic_search` is what callers want. This one
+    exists so a test can read the query plan without running it; evaluating it
+    outside :func:`hnsw_scan` is the underfetch bug described there.
     """
     vector = get_embedder().embed_query(normalize_for_index(query))
     queryset = Chunk.objects.filter(embedding__isnull=False)
@@ -306,9 +374,33 @@ def semantic_queryset(
         queryset = queryset.filter(transcript__segment__kind=kind)
     if surah is not None:
         queryset = queryset.filter(transcript__segment__surah_id=surah)
+    return _by_distance(queryset, vector, limit=limit)
+
+
+def _by_distance(
+    queryset: QuerySet[Chunk], vector: Sequence[float], *, limit: int
+) -> QuerySet[Chunk]:
+    """Order by the distance expression alone, so PostgreSQL can answer from
+    the ``chunk_embedding_hnsw`` index instead of sorting the table."""
     return queryset.annotate(distance=CosineDistance("embedding", vector)).order_by("distance")[
         :limit
     ]
+
+
+def nearest_chunks(
+    queryset: QuerySet[Chunk], vector: Sequence[float], *, limit: int = CANDIDATE_POOL
+) -> list[Chunk]:
+    """``limit`` chunks of ``queryset`` nearest to ``vector``, closest first.
+
+    ``queryset`` carries the filters; this adds the ordering and evaluates it
+    inside :func:`hnsw_scan`. Callers that already have a vector rather than a
+    query string — ``/related/``, which searches by a segment's centroid — come
+    through here instead of assembling their own ANN queryset, which is what
+    keeps the scan-depth fix in one place.
+    """
+    ordered = _by_distance(queryset, vector, limit=limit)
+    with hnsw_scan(limit):
+        return list(ordered)
 
 
 def semantic_search(
@@ -319,7 +411,9 @@ def semantic_search(
     limit: int = CANDIDATE_POOL,
 ) -> list[Chunk]:
     """Nearest chunks to ``query`` by embedding, closest first."""
-    return list(semantic_queryset(query, kind=kind, surah=surah, limit=limit))
+    ordered = semantic_queryset(query, kind=kind, surah=surah, limit=limit)
+    with hnsw_scan(limit):
+        return list(ordered)
 
 
 def rrf_merge(ranked_lists: list[list[int]], k: int = RRF_K) -> list[int]:
@@ -461,12 +555,16 @@ def search(
         raise SearchParameterError(f"kind must be one of {', '.join(SegmentKind.values)}")
     if page < 1:
         raise SearchParameterError("page must be 1 or greater")
+    if page > MAX_PAGE:
+        raise SearchParameterError(f"page must be {MAX_PAGE} or less")
     if not 1 <= page_size <= MAX_PAGE_SIZE:
         raise SearchParameterError(f"page_size must be between 1 and {MAX_PAGE_SIZE}")
     if not normalize_for_index(query):
         raise SearchParameterError("query must contain searchable text")
 
     ayah_matches = [_ayah_match(ayah) for ayah in parse_ayah_reference(query)]
+    # Bounded by MAX_PAGE * MAX_PAGE_SIZE, which is what keeps one request from
+    # asking the vector index for millions of rows.
     depth = max(CANDIDATE_POOL, page * page_size)
 
     if mode == "lexical":

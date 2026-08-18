@@ -1,6 +1,6 @@
 import os
-from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -111,8 +111,9 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
+    # Session + Basic only: the public API is anonymous and the admin is the
+    # only authenticated surface, so there is no token flow to support.
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
     ],
@@ -124,6 +125,23 @@ REST_FRAMEWORK = {
         'corrections': '10/hour',
         'clips': '5/hour',
     },
+    # How many reverse proxies sit in front of this process. Everything that
+    # identifies a client by address — the throttles and
+    # ``api.ip.client_ip`` — trusts exactly this many trailing
+    # ``X-Forwarded-For`` entries; the rest of the header is client-written and
+    # forgeable. One hop is the deployed topology (Caddy → gunicorn).
+    'NUM_PROXIES': int(os.environ.get('DRF_NUM_PROXIES', '1')),
+}
+
+# Throttle counters live in the cache, so a LocMemCache would give every
+# gunicorn worker its own budget and multiply every published rate by the
+# worker count. Redis is the shared store that makes the rates in
+# DEFAULT_THROTTLE_RATES mean what API_CONTRACT.md says they mean.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.environ.get('CACHE_REDIS_URL', 'redis://localhost:6379/2'),
+    }
 }
 
 # OpenAPI / Swagger configuration
@@ -145,20 +163,6 @@ SPECTACULAR_SETTINGS = {
         'ClipStatusEnum': 'clips.models.ClipStatus',
         'CorrectionStatusEnum': 'corpus.models.CorrectionStatus',
     },
-}
-
-# SimpleJWT configuration
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': False,
-    'UPDATE_LAST_LOGIN': True,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': os.environ.get(
-        'SECRET_KEY', 'django-insecure-dev-secret-key-template-project-1234'
-    ),
-    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 # Celery configurations
@@ -190,5 +194,19 @@ AUDIO_URL_TTL_SECONDS = int(os.environ.get('AUDIO_URL_TTL_SECONDS', str(6 * 3600
 
 # Pluggable engines: 'stub' is deterministic and dependency-free (tests/dev);
 # real backends live in pipeline/ and are selected in worker environments.
+# core.settings.prod refuses to boot on either stub (core.engines_guard).
 EMBEDDING_BACKEND = os.environ.get('EMBEDDING_BACKEND', 'stub')
 ASR_BACKEND = os.environ.get('ASR_BACKEND', 'stub')
+
+# Public site origin, used for sitemap URLs and as the default clip watermark.
+SITE_BASE_URL = os.environ.get('SITE_BASE_URL', 'http://localhost:3000')
+
+# Burned into every rendered clip card (US-013), so it has to name the archive
+# a viewer can actually reach. Defaults to the deployment's own host rather
+# than a literal, which is how a fork ends up stamping somebody else's domain.
+# The "machine transcript" mark is *not* part of this string: see
+# clips.rendering.MACHINE_TRANSCRIPT_MARK.
+CLIP_ATTRIBUTION = os.environ.get(
+    'CLIP_ATTRIBUTION',
+    f'أرشيف الشعراوي · {urlparse(SITE_BASE_URL).hostname or "shaarawy.archive"}',
+)

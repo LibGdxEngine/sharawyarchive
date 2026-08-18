@@ -5,9 +5,12 @@ with machine transcripts and chunks, and the audio asset behind them. Every app
 that exercises an endpoint imports these fixtures into its own ``conftest.py``
 rather than rebuilding the graph.
 
-``AudioAsset.storage_key`` is deliberately *not* the key the API serves
-(``corpus.storage.audio_key`` derives that from the hash), so a test can assert
-the raw key never appears in a payload and mean it.
+``AudioAsset.storage_key`` is the key the API really serves
+(``corpus.storage.audio_key`` of the asset's hash). It used to be an unrelated
+``ingest/original-….wav`` path, which quietly made every "no raw key in the
+payload" assertion vacuous: the string being searched for was one no serializer
+could have emitted even if it wanted to. Those assertions only mean something
+when the raw key and the served key are the same string.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from corpus.models import (
     Transcript,
     TranscriptWord,
 )
+from corpus.storage import audio_key
 from quran.models import Ayah, Surah
 
 AYAH_TEXTS = [
@@ -131,7 +135,7 @@ def make_surah(
 def make_audio_asset() -> AudioAsset:
     digest = uuid.uuid4().hex * 2
     return AudioAsset.objects.create(
-        storage_key=f'ingest/original-{digest[:12]}.wav',
+        storage_key=audio_key(digest),
         duration_ms=SEGMENT_MS,
         mime='audio/ogg',
         bitrate=64_000,

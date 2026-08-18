@@ -10,6 +10,7 @@ than an exception nobody sees.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 from django.conf import settings
@@ -184,7 +185,10 @@ def test_the_command_trims_the_audio_and_paints_the_preset() -> None:
 
 
 def test_every_clip_carries_a_mark_the_deployment_can_set() -> None:
-    assert rendering.DEFAULT_ATTRIBUTION in rendering.attribution_text()
+    # The default names this deployment's own host rather than a literal, so a
+    # fork does not stamp somebody else's domain on its clips.
+    assert urlparse(settings.SITE_BASE_URL).hostname in settings.CLIP_ATTRIBUTION
+    assert settings.CLIP_ATTRIBUTION in rendering.attribution_text()
 
     with override_settings(CLIP_ATTRIBUTION='archive.example'):
         assert 'archive.example' in rendering.attribution_text()

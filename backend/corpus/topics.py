@@ -31,7 +31,8 @@ an obviously mechanical one.
 
 Slugs are ASCII (``/api/topics/<slug:slug>/`` is an ASCII route) and namespaced
 ``auto-``: that prefix is what ``build_topics --rebuild`` deletes, so a
-hand-made topic is never swept away by a re-run.
+hand-made topic is never swept away by a re-run — and neither is an ``auto-``
+one that a reviewer has already published.
 """
 
 from __future__ import annotations
@@ -326,14 +327,22 @@ def build_topics(*, min_chunks: int = MIN_CHUNKS, rebuild: bool = False) -> Buil
     idempotent way to run this: without it a second run adds a second set of
     topics (with ``-2`` suffixed slugs) rather than updating the first.
 
+    A *published* ``auto-`` topic survives ``rebuild``. Publishing is the one
+    human decision in this whole module — somebody read the passages and said
+    the label holds — and a nightly re-run that deleted it would silently undo
+    that review and un-publish the topic. The next run's slugs step around the
+    survivors, so the reviewed topic keeps its URL.
+
     Raises :class:`NotEnoughChunks` when the corpus holds fewer than
     ``min_chunks`` embedded chunks.
     """
-    auto = Topic.objects.filter(slug__startswith=AUTO_SLUG_PREFIX)
     deleted = 0
     if rebuild:
-        deleted = auto.count()
-        auto.delete()
+        disposable = Topic.objects.filter(
+            slug__startswith=AUTO_SLUG_PREFIX, is_published=False
+        )
+        deleted = disposable.count()
+        disposable.delete()
 
     ids, vectors = _load_vectors()
     if len(ids) < min_chunks:

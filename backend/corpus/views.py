@@ -6,7 +6,6 @@ from __future__ import annotations
 from django.db.models import Count, QuerySet
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
-from pgvector.django import CosineDistance
 from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -15,7 +14,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from api.cache import ImmutableCacheMixin
+from api.cache import PRIVATE_SHORT, PUBLIC_SHORT, CacheControlMixin, ImmutableCacheMixin
+from api.ip import client_ip
 
 from .corrections import word_range_in_span
 from .models import Chunk, ChunkTopic, Segment, Topic
@@ -33,13 +33,27 @@ from .serializers import (
 RELATED_LIMIT = 10
 """How many neighbouring passages ``/related/`` returns."""
 
+TOPIC_CHUNK_LIMIT = 100
+"""Cap on the passages ``/api/topics/{slug}/`` serves in one response.
+
+A clustered topic can hold thousands of chunks and the endpoint has no
+pagination, so without a cap one slug is an unauthenticated request for the
+whole corpus. ``chunk_count`` still reports the real total."""
+
 CONFIDENCE_DIGITS = 3
 """ASR confidence past the third decimal is noise, and it is per-word payload."""
 
 
-class SegmentDetailView(ImmutableCacheMixin, RetrieveAPIView):
-    """``GET /api/segments/{id}/`` — metadata plus presigned media URLs."""
+class SegmentDetailView(CacheControlMixin, RetrieveAPIView):
+    """``GET /api/segments/{id}/`` — metadata plus presigned media URLs.
 
+    Not immutable, despite the rest of the segment being append-only: the body
+    embeds presigned audio and waveform URLs that expire in six hours, so it is
+    ``private`` (a shared cache must not hand one reader's signed URL to
+    another) and short-lived (API_CONTRACT.md amendment 4).
+    """
+
+    cache_control = PRIVATE_SHORT
     serializer_class = SegmentDetailSerializer
 
     def get_queryset(self) -> QuerySet[Segment]:
@@ -145,24 +159,34 @@ class SegmentRelatedView(ImmutableCacheMixin, APIView):
 
         import numpy as np
 
+        from search.services import nearest_chunks
+
         centroid = np.mean(np.asarray(vectors, dtype=float), axis=0).tolist()
-        neighbours = (
+        # Through search.services, not a queryset of its own: the "not this
+        # segment" filter is applied after the approximate index scan, so this
+        # is exactly the query that silently underfetches without the scan
+        # depth that helper sets.
+        neighbours = nearest_chunks(
             Chunk.objects.filter(embedding__isnull=False)
             .exclude(transcript__segment_id=pk)
-            .annotate(distance=CosineDistance('embedding', centroid))
-            .order_by('distance')
-            .select_related('transcript__segment')[:RELATED_LIMIT]
+            .select_related('transcript__segment'),
+            centroid,
+            limit=RELATED_LIMIT,
         )
         return Response(ChunkResultSerializer(neighbours, many=True).data)
 
 
-class TopicListView(ImmutableCacheMixin, ListAPIView):
+class TopicListView(CacheControlMixin, ListAPIView):
     """``GET /api/topics/`` — the published topics only.
 
     An unpublished topic is an unreviewed cluster label, so it is invisible
-    rather than merely unlinked: nothing about it leaves the backend.
+    rather than merely unlinked: nothing about it leaves the backend. Which is
+    also why this is not immutable: publishing is an editorial decision, and an
+    immutable response would mean unpublishing never reaches anyone who already
+    looked (API_CONTRACT.md amendment 4).
     """
 
+    cache_control = PUBLIC_SHORT
     serializer_class = TopicListSerializer
     pagination_class = None
 
@@ -175,20 +199,28 @@ class TopicListView(ImmutableCacheMixin, ListAPIView):
         )
 
 
-class TopicDetailView(ImmutableCacheMixin, APIView):
-    """``GET /api/topics/{slug}/`` — the topic and its passages, best first."""
+class TopicDetailView(CacheControlMixin, APIView):
+    """``GET /api/topics/{slug}/`` — the topic and its best passages.
+
+    Cached like the list for the same reason: the publish gate has to be able
+    to close again.
+    """
+
+    cache_control = PUBLIC_SHORT
 
     @extend_schema(operation_id='topic_retrieve', responses=TopicDetailSerializer)
     def get(self, request: Request, slug: str) -> Response:
         topic = get_object_or_404(Topic, slug=slug, is_published=True)
-        links = (
-            ChunkTopic.objects.filter(topic=topic)
-            .select_related('chunk__transcript__segment')
-            .order_by('-score')
-        )
-        chunks = [link.chunk for link in links]
-        topic.chunk_count = len(chunks)  # type: ignore[attr-defined]
-        topic.chunks = chunks  # type: ignore[attr-defined]
+        links = ChunkTopic.objects.filter(topic=topic)
+        # Count separately from the slice: chunk_count is the topic's real
+        # size, `chunks` is the first TOPIC_CHUNK_LIMIT of them by score.
+        topic.chunk_count = links.count()  # type: ignore[attr-defined]
+        topic.chunks = [  # type: ignore[attr-defined]
+            link.chunk
+            for link in links.select_related('chunk__transcript__segment').order_by('-score')[
+                :TOPIC_CHUNK_LIMIT
+            ]
+        ]
         return Response(TopicDetailSerializer(topic).data)
 
 
@@ -211,7 +243,8 @@ class CorrectionCreateView(APIView):
     def post(self, request: Request) -> Response:
         serializer = CorrectionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        correction = serializer.save(submitted_ip=request.META.get('REMOTE_ADDR'))
+        # REMOTE_ADDR is Caddy in a deployed setup; api.ip resolves the hop.
+        correction = serializer.save(submitted_ip=client_ip(request))
         return Response(
             CorrectionCreatedSerializer(correction).data, status=status.HTTP_201_CREATED
         )

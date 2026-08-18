@@ -41,23 +41,23 @@ FRAME_SIZE = '1080x1920'
 VIDEO_CRF = '20'
 AUDIO_BITRATE = '128k'
 
-DEFAULT_ATTRIBUTION = 'أرشيف الشعراوي · shaarawy.archive'
-"""Every clip carries the mark of where it came from (US-013). Overridable with
-``CLIP_ATTRIBUTION`` in settings so a deployment can stamp its own domain."""
-
 MACHINE_TRANSCRIPT_MARK = 'نص آلي'
 """A clip card burns the machine transcript into a video that then travels
 without us, which makes it the surface where project rule 1 matters most: ASR
-output is never presented as anything but ASR output. The mark is prepended
-here rather than folded into ``CLIP_ATTRIBUTION``, so a deployment overriding
-the attribution cannot drop it."""
+output is never presented as anything but ASR output. The mark lives here, in
+code, rather than in ``settings.CLIP_ATTRIBUTION``, so that a deployment
+restamping the card with its own domain cannot drop it."""
 
 
 def attribution_text() -> str:
-    """The line along the bottom of every card. Read late, so a deployment
-    setting (or ``override_settings`` in a test) is honoured."""
-    mark = getattr(settings, 'CLIP_ATTRIBUTION', '') or DEFAULT_ATTRIBUTION
-    return f'{MACHINE_TRANSCRIPT_MARK} · {mark}'
+    """The line along the bottom of every card: the machine-transcript mark,
+    then whoever this deployment is.
+
+    ``settings.CLIP_ATTRIBUTION`` defaults to the site's own host (see
+    ``core.settings.base``) rather than a literal, because a clip that outlives
+    the page it came from has to name an archive that actually exists. Read
+    late, so ``override_settings`` in a test is honoured."""
+    return f'{MACHINE_TRANSCRIPT_MARK} · {settings.CLIP_ATTRIBUTION}'
 
 
 def _escape_filter_path(path: str) -> str:

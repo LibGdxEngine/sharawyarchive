@@ -214,6 +214,27 @@ def test_rebuild_leaves_hand_made_topics_alone(clusters: list[Chunk]) -> None:
     assert Topic.objects.filter(pk=keeper.pk).exists()
 
 
+def test_rebuild_keeps_an_auto_topic_a_human_has_published(clusters: list[Chunk]) -> None:
+    """Publishing is the one human decision in this module: somebody read the
+    passages and said the label holds. A nightly ``--rebuild`` that deleted the
+    row would silently undo that review and un-publish the topic."""
+    call_command("build_topics")
+    reviewed = Topic.objects.first()
+    assert reviewed is not None
+    reviewed.is_published = True
+    reviewed.save(update_fields=["is_published"])
+
+    call_command("build_topics", "--rebuild")
+
+    reviewed.refresh_from_db()
+    assert reviewed.is_published is True
+    # It keeps its slug, so the URL a reader was given still resolves.
+    assert Topic.objects.filter(pk=reviewed.pk, slug=reviewed.slug).exists()
+    assert not Topic.objects.filter(
+        slug__startswith=topics.AUTO_SLUG_PREFIX, is_published=False
+    ).filter(slug=reviewed.slug).exists()
+
+
 def test_a_rerun_without_rebuild_does_not_collide(clusters: list[Chunk]) -> None:
     call_command("build_topics")
     before = Topic.objects.count()

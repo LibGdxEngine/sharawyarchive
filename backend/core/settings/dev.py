@@ -46,6 +46,3 @@ if all([DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT]):
 
 # CORS settings for dev
 CORS_ALLOW_ALL_ORIGINS = True
-
-# Sitemap base URL
-SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "http://localhost:3000")

@@ -1,10 +1,16 @@
 """Response shapes for the corpus endpoints (``API_CONTRACT.md``).
 
-Two project rules shape this module. Storage keys and content hashes never
-appear in a payload — audio and waveforms are exposed only as presigned URLs
-(rule 4). And every offset is an integer millisecond (rule 5), which is why the
-transcript word keys are the one-letter ``i/t/s/e/c`` form: a segment can carry
-thousands of words and the key names would otherwise outweigh the data.
+Two project rules shape this module. Rule 4: no payload carries a raw storage
+key or a content hash as a *field* — audio and waveforms are exposed only
+through :func:`~corpus.storage.presigned_url`, and there is no ``sha256`` or
+``storage_key`` for a client to read, derive a bucket path from, or store. A
+presigned URL does necessarily contain the object's path, because that is what
+it is a signature over; what it does not give away is the hash of anything
+else, a stable link, or access after the signature expires.
+
+Rule 5: every offset is an integer millisecond, which is why the transcript
+word keys are the one-letter ``i/t/s/e/c`` form — a segment can carry thousands
+of words and the key names would otherwise outweigh the data.
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ from typing import Any
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from .corrections import chunk_word_range
 from .models import Chunk, Correction, Segment, Source, Topic
 from .storage import audio_key, presigned_url, waveform_key
 
@@ -172,7 +179,14 @@ class TopicDetailSerializer(serializers.ModelSerializer):
 
 class CorrectionCreateSerializer(serializers.ModelSerializer):
     """``POST /api/corrections/``. Word offsets index ``TranscriptWord.idx``;
-    a one-word fix has ``word_start == word_end``."""
+    a one-word fix has ``word_start == word_end``.
+
+    The range is checked against the named chunk's own words here, not only at
+    approval time. :func:`corpus.corrections.approve` refuses a range that
+    reaches outside its chunk, so accepting one at submission would queue a
+    suggestion that no reviewer can ever act on: a dead letter that costs the
+    submitter their rate limit and the reviewer a decision they cannot make.
+    """
 
     chunk_id = serializers.PrimaryKeyRelatedField(
         source='chunk', queryset=Chunk.objects.all()
@@ -183,9 +197,30 @@ class CorrectionCreateSerializer(serializers.ModelSerializer):
         fields = ('chunk_id', 'word_start', 'word_end', 'suggested_text')
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        if attrs['word_end'] < attrs['word_start']:
+        word_start, word_end = attrs['word_start'], attrs['word_end']
+        if word_end < word_start:
             raise serializers.ValidationError(
                 {'word_end': 'must not come before word_start'}
+            )
+        chunk = attrs['chunk']
+        chunk_range = chunk_word_range(chunk)
+        if chunk_range is None:
+            raise serializers.ValidationError(
+                {'chunk_id': f'chunk {chunk.pk} covers no transcript words'}
+            )
+        low, high = chunk_range
+        if word_start < low or word_end > high:
+            # Named after the end that is out of bounds, so the UI can point at
+            # the right handle. ASCII only: the message is echoed straight back
+            # into a JSON body that is otherwise Arabic.
+            field = 'word_start' if word_start < low else 'word_end'
+            raise serializers.ValidationError(
+                {
+                    field: (
+                        f'words {word_start}-{word_end} fall outside chunk '
+                        f'{chunk.pk}, which covers words {low}-{high}'
+                    )
+                }
             )
         return attrs
 

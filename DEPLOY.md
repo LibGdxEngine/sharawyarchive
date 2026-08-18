@@ -14,7 +14,14 @@ Required values in `.env`:
 - `AUDIO_S3_*` — Cloudflare R2 credentials for bucket `shaarawy`
   (endpoint `https://6452da3166483560913682a6dd5a5b77.r2.cloudflarestorage.com`).
 - `DOMAIN_NAME`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`,
-  `NEXT_PUBLIC_API_URL` — your domain.
+  `NEXT_PUBLIC_API_URL` — your domain. `DOMAIN_NAME` is scheme-prefixed
+  (`https://example.com`); `SITE_BASE_URL` and `NEXT_PUBLIC_SITE_URL` default to
+  it, so set them only if the public origin differs.
+- `ASR_BACKEND=faster-whisper` and `EMBEDDING_BACKEND=e5` — **required.** Django's
+  built-in defaults are `stub`, and the stub engines *fabricate* transcript text
+  and embeddings. A production stack left on `stub` silently fills the archive
+  with invented speech attributed to the Sheikh. Keep `ALLOW_STUB_ENGINES` empty;
+  set it to `true` only for a throwaway staging smoke test.
 - Behind Cloudflare's proxy set `SECURE_SSL_REDIRECT=False` (Cloudflare terminates TLS).
 
 ## 2. Start
@@ -37,9 +44,17 @@ Audio ingestion runs from a (GPU) worker host with `pipeline/requirements.txt`
 installed, pointed at this stack's Redis and Postgres:
 
 ```bash
+export ASR_BACKEND=faster-whisper EMBEDDING_BACKEND=e5   # never "stub" — see below
 celery -A pipeline.celery_app worker -Q pipeline   # long-running worker
 python -m pipeline.run --folder /data/mp3s --source-title "خواطر التلفزيون المصري" --kind khawatir
 ```
+
+**Production ingest must run with `ASR_BACKEND=faster-whisper`** (and
+`EMBEDDING_BACKEND=e5`). The `stub` backends exist for the test suite only: their
+output is *fabricated* text, not a transcription of the audio. Ingesting with
+them writes invented words into `Transcript` rows that the UI then presents as
+the Sheikh's speech. If you suspect a batch ran on stubs, delete those
+transcripts and re-ingest — there is no way to tell stub text apart downstream.
 
 ## 4. Verify
 
@@ -135,5 +150,8 @@ https://$DOMAIN/sitemap-segments.xml  # indexed audio segments
 ```
 
 Submit `https://$DOMAIN/sitemap.xml` to Google Search Console.
-Set `SITE_BASE_URL=https://$DOMAIN` in `.env` so URLs in the sitemap use the
-canonical domain (default `http://localhost:3000`).
+
+These are Django views (`backend/core/sitemaps.py`), not Next.js routes — Caddy
+routes `/sitemap.xml` and `/sitemap-*.xml` to the backend ahead of the catch-all
+frontend proxy. Compose derives `SITE_BASE_URL` from `DOMAIN_NAME`; override it
+in `.env` only when the public origin differs from the Caddy site address.

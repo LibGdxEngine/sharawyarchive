@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from corpus.models import Segment
+from corpus.models import Segment, SegmentKind
 
 from .models import Ayah, RevelationPlace, Surah
 
@@ -33,14 +33,39 @@ class SurahListSerializer(serializers.ModelSerializer):
         )
 
 
+class AyahSegmentRefSerializer(serializers.Serializer):
+    """A covering segment as listed on a surah page — just enough to link to it.
+
+    Serialized from the ``.values()`` dicts the view fans out, not from model
+    instances, so the whole page costs one segment query.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    kind = serializers.ChoiceField(choices=SegmentKind.choices, read_only=True)
+    title = serializers.CharField(read_only=True)
+
+
 class SurahAyahSerializer(serializers.ModelSerializer):
-    """One ayah inside a paginated surah page."""
+    """One ayah inside a paginated surah page.
+
+    ``segments`` is capped at ``views.MAX_AYAH_SEGMENTS``; ``segment_count`` is
+    the uncapped total.
+    """
 
     segment_count = serializers.IntegerField(read_only=True)
+    segments = AyahSegmentRefSerializer(many=True, read_only=True)
 
     class Meta:
         model = Ayah
-        fields = ('number', 'text_uthmani', 'juz', 'page', 'sajda', 'segment_count')
+        fields = (
+            'number',
+            'text_uthmani',
+            'juz',
+            'page',
+            'sajda',
+            'segment_count',
+            'segments',
+        )
 
 
 class AyahPageSerializer(serializers.Serializer):

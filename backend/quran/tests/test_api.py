@@ -8,7 +8,14 @@ import pytest
 from rest_framework.test import APIClient
 
 from api.cache import IMMUTABLE
-from api.tests.factories import Archive, clear_quran, make_surah
+from api.tests.factories import (
+    Archive,
+    clear_quran,
+    make_audio_asset,
+    make_segment,
+    make_surah,
+)
+from quran.views import MAX_AYAH_SEGMENTS
 
 pytestmark = pytest.mark.django_db
 
@@ -22,7 +29,16 @@ SURAH_KEYS = {
     'segment_count',
 }
 SURAH_DETAIL_KEYS = {'number', 'name_ar', 'name_en', 'ayah_count', 'revelation_place', 'ayahs'}
-PAGE_AYAH_KEYS = {'number', 'text_uthmani', 'juz', 'page', 'sajda', 'segment_count'}
+PAGE_AYAH_KEYS = {
+    'number',
+    'text_uthmani',
+    'juz',
+    'page',
+    'sajda',
+    'segment_count',
+    'segments',
+}
+PAGE_AYAH_SEGMENT_KEYS = {'id', 'kind', 'title'}
 AYAH_KEYS = {'surah', 'number', 'text_uthmani', 'text_imlaei', 'juz', 'page', 'segments'}
 SEGMENT_KEYS = {'id', 'kind', 'title', 'ayah_start', 'ayah_end', 'duration_ms'}
 
@@ -86,6 +102,77 @@ def test_surah_detail_returns_the_contract_shape(api: APIClient, archive: Archiv
     assert first['sajda'] is False
     # Coverage counts: segment 1-2 and segment 1-1 both cover ayah 1.
     assert [first['segment_count'], second['segment_count'], third['segment_count']] == [2, 1, 0]
+
+
+def test_surah_detail_inlines_the_segments_covering_each_ayah(
+    api: APIClient, archive: Archive
+) -> None:
+    """The page carries listen targets, so the client never fans out per ayah."""
+    results = api.get('/api/surahs/2/').json()['ayahs']['results']
+
+    covering = {row['number']: [segment['id'] for segment in row['segments']] for row in results}
+    assert covering == {
+        1: [archive.segment.pk, archive.other.pk],
+        2: [archive.segment.pk],
+        3: [],
+    }
+    (segment,) = results[1]['segments']
+    assert set(segment) == PAGE_AYAH_SEGMENT_KEYS
+    assert (segment['kind'], segment['title']) == ('khawatir', archive.segment.title)
+
+
+def test_surah_detail_caps_inlined_segments_but_not_the_count(
+    api: APIClient, archive: Archive
+) -> None:
+    """A heavily covered ayah truncates its list; ``segment_count`` stays true."""
+    extra = MAX_AYAH_SEGMENTS + 1
+    for ordinal in range(extra):
+        make_segment(
+            archive.source,
+            make_audio_asset(),
+            surah=archive.surah,
+            ayah_start=1,
+            ayah_end=1,
+            title=f'خواطر إضافية {ordinal}',
+            ordinal=10 + ordinal,
+        )
+
+    (first, *_) = api.get('/api/surahs/2/').json()['ayahs']['results']
+
+    assert first['segment_count'] == 2 + extra
+    assert len(first['segments']) == MAX_AYAH_SEGMENTS
+
+
+def test_surah_detail_is_a_constant_number_of_queries(
+    api: APIClient, archive: Archive, django_assert_num_queries: Any
+) -> None:
+    """Coverage stays one query however many segments hang off the page."""
+    for ordinal in range(5):
+        make_segment(
+            archive.source,
+            make_audio_asset(),
+            surah=archive.surah,
+            ayah_start=1,
+            ayah_end=3,
+            title=f'خواطر إضافية {ordinal}',
+            ordinal=20 + ordinal,
+        )
+
+    with django_assert_num_queries(3):  # surah, ayah page, covering segments
+        api.get('/api/surahs/2/')
+
+
+def test_a_segment_without_an_ayah_range_is_not_inlined(
+    api: APIClient, archive: Archive
+) -> None:
+    archive.other.ayah_start = None
+    archive.other.ayah_end = None
+    archive.other.save(update_fields=['ayah_start', 'ayah_end'])
+
+    (first, *_) = api.get('/api/surahs/2/').json()['ayahs']['results']
+
+    assert [segment['id'] for segment in first['segments']] == [archive.segment.pk]
+    assert first['segment_count'] == 1
 
 
 @pytest.fixture

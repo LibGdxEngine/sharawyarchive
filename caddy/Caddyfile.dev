@@ -6,6 +6,11 @@
     reverse_proxy /api/* backend:8000
     reverse_proxy /admin/* backend:8000
 
+    # Sitemaps are rendered by Django (core/sitemaps.py), not Next.js.
+    # Must precede the catch-all or crawlers get the frontend's 404.
+    reverse_proxy /sitemap.xml backend:8000
+    reverse_proxy /sitemap-*.xml backend:8000
+
     # Reverse proxy all other requests to Next.js frontend
     reverse_proxy /* frontend:3000
 

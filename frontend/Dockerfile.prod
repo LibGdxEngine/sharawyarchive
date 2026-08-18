@@ -15,9 +15,22 @@ COPY . .
 # Disable telemetry during build
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# Accept API URL build argument to embed it in the build output
+# NEXT_PUBLIC_* values are inlined into the bundle at build time, so they have
+# to be present here, not just at runtime.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+# Public origin behind metadataBase, canonical URLs and Open Graph tags.
+ARG NEXT_PUBLIC_SITE_URL
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+
+# Browser-side Sentry DSN (blank disables client reporting).
+ARG NEXT_PUBLIC_SENTRY_DSN
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+
+# Server-side DSN; also what @sentry/nextjs uses to upload source maps.
+ARG SENTRY_DSN
+ENV SENTRY_DSN=$SENTRY_DSN
 
 RUN npm run build
 

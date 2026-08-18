@@ -86,3 +86,6 @@ search 30/min anon; corrections 10/hour; clips 5/hour → 429 with `Retry-After`
    `Cache-Control: private, max-age=300` (its presigned URLs expire in 6h and
    must not sit in shared caches for a year). Topics send `public, max-age=300`
    so publish/unpublish propagates.
+5. **Surah detail ayahs** additionally carry `segments: [{id, kind, title}]`
+   (max 5 inlined; `segment_count` stays uncapped) so the surah page needs no
+   per-ayah fan-out.

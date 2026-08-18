@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from django.db.models import Count, QuerySet
 from django.shortcuts import get_object_or_404
@@ -52,25 +53,37 @@ def _page_number(request: Request) -> int:
     return page
 
 
-def _covering_counts(surah_number: int, ayah_numbers: list[int]) -> dict[int, int]:
-    """How many segments cover each ayah in ``ayah_numbers``.
+MAX_AYAH_SEGMENTS = 5
+"""How many covering segments a surah page lists per ayah.
+
+The cap keeps the payload bounded on heavily covered verses; ``segment_count``
+stays the true total so the UI can still say "and N more".
+"""
+
+
+def _covering_segments(
+    surah_number: int, ayah_numbers: list[int]
+) -> dict[int, list[dict[str, Any]]]:
+    """The segments covering each ayah in ``ayah_numbers``, in segment order.
 
     One query for the whole page: fetch the segment ranges that overlap it and
-    fan them out in Python, rather than a correlated subquery per verse.
+    fan them out in Python, rather than a correlated subquery per verse. The
+    surah page renders listen links straight from this, so the frontend never
+    has to follow up with one ``/api/ayahs/{s}/{a}/`` call per verse.
     """
     if not ayah_numbers:
         return {}
-    ranges = Segment.objects.filter(
+    rows = Segment.objects.filter(
         surah_id=surah_number,
         ayah_start__lte=ayah_numbers[-1],
         ayah_end__gte=ayah_numbers[0],
-    ).values_list('ayah_start', 'ayah_end')
-    counts = dict.fromkeys(ayah_numbers, 0)
-    for start, end in ranges:
+    ).values('id', 'kind', 'title', 'ayah_start', 'ayah_end')
+    covering: dict[int, list[dict[str, Any]]] = {number: [] for number in ayah_numbers}
+    for row in rows:
         for number in ayah_numbers:
-            if start <= number <= end:
-                counts[number] += 1
-    return counts
+            if row['ayah_start'] <= number <= row['ayah_end']:
+                covering[number].append(row)
+    return covering
 
 
 class SurahDetailView(ImmutableCacheMixin, APIView):
@@ -90,9 +103,11 @@ class SurahDetailView(ImmutableCacheMixin, APIView):
 
         start = (page - 1) * AYAH_PAGE_SIZE
         ayahs = list(surah.ayahs.all()[start : start + AYAH_PAGE_SIZE])
-        counts = _covering_counts(surah.number, [ayah.number for ayah in ayahs])
+        covering = _covering_segments(surah.number, [ayah.number for ayah in ayahs])
         for ayah in ayahs:
-            ayah.segment_count = counts[ayah.number]  # type: ignore[attr-defined]
+            rows = covering[ayah.number]
+            ayah.segment_count = len(rows)  # type: ignore[attr-defined]
+            ayah.segments = rows[:MAX_AYAH_SEGMENTS]  # type: ignore[attr-defined]
 
         payload = {
             'number': surah.number,

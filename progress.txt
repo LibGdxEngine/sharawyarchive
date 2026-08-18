@@ -1,0 +1,10 @@
+# Sha'rawy Archive — Ralph progress log
+
+## Iteration 1 (2026-08-18)
+- Repo was a generic Django+Next.js docker starter (api/core apps, NextAuth frontend). None of the plan implemented.
+- Environment: Docker 29 + compose v5, Python 3.12, Node 24, ffmpeg 6.1, network OK (tanzil.net reachable). No GPU, no real Sha'rawy audio.
+- Decisions:
+  - ASR/align/embed engines pluggable; deterministic stubs for tests; real faster-whisper/e5 modules ship lazily-imported in pipeline/.
+  - Filename parser config-driven (parser_patterns.json) since sample filenames unavailable (user offline; plan asked to request 20 samples).
+  - R2: endpoint https://6452da3166483560913682a6dd5a5b77.r2.cloudflarestorage.com bucket shaarawy via env keys; MinIO locally with same S3 client code.
+- PRD written: 16 stories US-001..US-016 mapping plan phases 0-10.

@@ -1,4 +1,32 @@
-.PHONY: help up down build restart ps logs logs-backend logs-frontend shell backend-shell frontend-shell makemigrations migrate createsuperuser test-backend test-frontend clean prod-up prod-down prod-build
+.PHONY: help up down build restart ps logs logs-backend logs-frontend shell backend-shell frontend-shell makemigrations migrate createsuperuser test-backend test-frontend clean prod-up prod-down prod-build dev be fe test lint types
+
+VENV ?= .venv
+PY := $(abspath $(VENV))/bin/python
+
+# ---- Sha'rawy Archive workflow targets ----
+
+dev:
+	docker compose up -d db redis meilisearch minio
+
+be:
+	cd backend && DJANGO_SETTINGS_MODULE=core.settings.dev DB_HOST=localhost DB_PORT=5432 DB_NAME=postgres DB_USER=postgres DB_PASSWORD=postgres $(PY) manage.py runserver
+
+fe:
+	cd frontend && npm run dev
+
+test:
+	cd backend && DJANGO_SETTINGS_MODULE=core.settings.dev DB_HOST=localhost DB_PORT=5432 DB_NAME=postgres DB_USER=postgres DB_PASSWORD=postgres $(PY) -m pytest
+	cd frontend && npm run test -- --run
+
+lint:
+	cd backend && $(PY) -m ruff check .
+	cd backend && $(PY) -m mypy . || true
+	cd frontend && npm run lint
+	cd frontend && npx tsc --noEmit
+
+types:
+	cd backend && DJANGO_SETTINGS_MODULE=core.settings.dev $(PY) manage.py spectacular --file ../frontend/openapi-schema.yml
+	cd frontend && npx openapi-typescript openapi-schema.yml -o src/types/api.ts
 
 # Default target: show help
 help:

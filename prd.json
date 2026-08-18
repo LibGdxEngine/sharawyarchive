@@ -1,0 +1,224 @@
+{
+  "project": "Sha'rawy Archive",
+  "description": "Searchable audio archive of Sheikh Al-Sha'rawy: type a phrase, land on the exact second it was said, words highlight as he speaks. Django+DRF+pgvector+Meilisearch backend, standalone ASR pipeline, Next.js RTL frontend, R2 storage.",
+  "environmentNotes": "No real Sha'rawy audio or GPU here: ASR/alignment/embedding engines are pluggable with deterministic stub engines used for tests; real faster-whisper/e5 integrations ship in pipeline/ but are exercised only via stubs. Filename parser is config-driven regex (sample filenames unavailable).",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Infrastructure foundation",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Root CLAUDE.md and SHAARAWY_PROJECT_PLAN.md exist",
+        "docker-compose.yml: postgres uses pgvector/pgvector:pg16 image, adds meilisearch (getmeili/meilisearch) and minio services with healthchecks and exposed ports",
+        "Makefile has dev, be, fe, test, lint, types targets that run the documented commands",
+        "backend/requirements.txt includes pgvector, meilisearch, boto3, pytest, pytest-django, ruff, mypy, django-stubs",
+        "A local venv at .venv installs backend requirements and `python manage.py check` passes with DJANGO_SETTINGS_MODULE=core.settings.dev",
+        "docker compose up brings db (pgvector), redis, meilisearch, minio to healthy state; `SELECT extversion FROM pg_extension` possible after CREATE EXTENSION vector succeeds"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Arabic normalization module",
+      "priority": 2,
+      "passes": false,
+      "acceptanceCriteria": [
+        "backend/corpus/arabic.py exposes normalize_for_index(s) (all 8 spec steps) and normalize_light(s) (steps 1-3 only), both typed",
+        "Steps exactly per spec: NFC; strip tatweel U+0640; strip harakat U+064B-U+0652, U+0670, U+06D6-U+06ED; hamza variants to bare alif; ta marbuta->ha, alif maqsura->ya, waw/ya hamza fold (index only); whitespace collapse; Arabic-Indic digits (both U+0660 and U+06F0 ranges) to ASCII",
+        "backend/corpus/tests/fixtures/normalization_pairs.json holds >=50 tricky input/expected pairs covering every rule (Quranic annotation marks, dagger alif, digits, hamza forms, mixed)",
+        "pytest backend/corpus/tests/test_arabic.py passes all fixture pairs for both entry points"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Data models: quran + corpus apps with pgvector",
+      "priority": 3,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Apps quran, corpus, search, clips, accounts created and in INSTALLED_APPS",
+        "quran.models: Surah(number PK, name_ar, name_ar_plain, name_en, ayah_count, revelation_place, order_revealed), Ayah(surah FK, number, text_uthmani, text_imlaei, text_normalized, juz, hizb, page, sajda, unique(surah,number))",
+        "corpus.models: Source, AudioAsset(sha256 unique), Segment(kind choices recitation|khawatir, status choices pending|transcribed|aligned|indexed|failed, index on (surah,ayah_start)), Transcript(segment OneToOne, version int), TranscriptWord(unique(transcript,idx), index(transcript,start_ms)), Chunk(embedding VectorField(1024) null), PipelineRun log model",
+        "All timestamps integer milliseconds (PositiveBigIntegerField/IntegerField), no floats",
+        "Migrations apply cleanly against pgvector Postgres 16 (CREATE EXTENSION vector via migration), verified by `manage.py migrate` against the docker db",
+        "HNSW index on Chunk.embedding (vector_cosine_ops) exists in a migration"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "import_quran management command",
+      "priority": 4,
+      "passes": false,
+      "acceptanceCriteria": [
+        "python manage.py import_quran downloads/uses Tanzil uthmani + imlaei sources (cached under backend/quran/data/), populates Surah+Ayah with juz/page metadata, fills text_normalized via normalize_for_index",
+        "After run: exactly 114 Surah rows and 6236 Ayah rows",
+        "Second run is idempotent: reports 0 created, DB row contents unchanged",
+        "Ayah 2:255 text_uthmani starts with the Ayat al-Kursi text and is non-empty in both uthmani and imlaei forms",
+        "pytest test covers parser + idempotency using a small fixture slice"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Ingestion pipeline: audio to timestamped words",
+      "priority": 5,
+      "passes": false,
+      "acceptanceCriteria": [
+        "pipeline/ package with own requirements.txt (heavy deps) and requirements-stub.txt (test deps only); Django never imports pipeline (verified by grep: no 'import pipeline' under backend/)",
+        "pipeline/parsers.py: config-driven regex list loaded from pipeline/parser_patterns.json, parse_filename() returns surah/ayah range/kind/ordinal; CLI --dry-run prints parse results without writing",
+        "Celery stages ingest, transcode, transcribe, align, chunk, embed, index_segment on dedicated 'pipeline' queue; each checks Segment.status + sha256 and skips completed work (idempotent)",
+        "ASR/aligner/embedder behind pluggable engine interface; stub engines produce deterministic words with ms timings; faster-whisper + e5 real engine modules exist with lazy imports",
+        "Chunking: split where inter-word gap > 400ms AND chunk >= 20s, hard max 45s; recitation segments never split mid-ayah (test proves both rules)",
+        "Failure: corrupted audio marks that Segment failed with traceback recorded in PipelineRun, batch continues (test proves it)",
+        "run_pipeline management command with --limit and --surah flags; end-to-end test with ffmpeg-synthesized audio + stub engines yields Transcript, TranscriptWord (integer ms), Chunk rows; re-run reports all skipped"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Search: lexical + semantic + hybrid",
+      "priority": 6,
+      "passes": false,
+      "acceptanceCriteria": [
+        "search/services.py: Meilisearch index 'chunks' configured with searchable=[text_normalized], filterable=[surah,kind,ayah_start], sortable=[surah,start_ms]; documents carry {id,segment_id,surah,ayah_start,ayah_end,kind,text,text_normalized,start_ms,end_ms}",
+        "Queries pass through normalize_for_index before hitting Meili (test: query with wrong hamzas/diacritics returns same results as canonical spelling, against live Meilisearch)",
+        "Semantic path: pgvector cosine distance over Chunk.embedding with query embedded via pluggable embedder (e5 'query: '/'passage: ' prefixes in real engine)",
+        "Hybrid: reciprocal rank fusion k=60 merging lexical+semantic lists; mode parameter lexical|semantic|hybrid, default hybrid; unit tests for RRF math",
+        "Ayah reference parser resolves '2:255', 'البقرة 255', and known ayah names ('آية الكرسي') to exact Ayah hits surfaced separately",
+        "EXPLAIN output for the semantic query shows the HNSW index scan (test asserts 'hnsw' or index name in plan)"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "API layer",
+      "priority": 7,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Endpoints: GET /api/surahs/, /api/surahs/{n}/ (ayahs paginated by 20), /api/ayahs/{surah}/{ayah}/ (with covering segments), /api/segments/{id}/ (signed audio+waveform URLs), /api/segments/{id}/transcript/ (compact keys i,t,s,e,c), /api/search/, /api/topics/, /api/topics/{slug}/, POST /api/corrections/, GET+POST /api/clips/",
+        "Transcript and ayah responses send Cache-Control: public, max-age=31536000, immutable (content-addressed by transcript version); search sends no-store",
+        "Audio URLs are server-side presigned S3 URLs (R2 endpoint https://6452da3166483560913682a6dd5a5b77.r2.cloudflarestorage.com bucket shaarawy in prod, MinIO in dev), 6h TTL; raw storage keys never appear in responses (test asserts)",
+        "Throttles: search 30/min anon, corrections 10/hour, clips 5/hour (DRF throttle classes, test proves 429)",
+        "drf-spectacular schema generates; make types produces frontend/src/types/api.ts via openapi-typescript; tsc compiles it with zero any",
+        "pytest suite covers every endpoint with a fixture surah + segment + transcript, all passing"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Frontend foundation: RTL, fonts, audio store",
+      "priority": 8,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Root layout has dir=\"rtl\" lang=\"ar\" on <html>; no per-component RTL hacks",
+        "Two self-hosted fonts via next/font/local: a Uthmani face for ayah text and an Arabic UI face for everything else, with font-display strategy that avoids layout shift (size-adjust/fallback metrics)",
+        "frontend/DESIGN.md records the design direction: two-typeface identity, restraint, no cream-paper-terracotta, highlight as signature element, reduced-motion + 360px + focus-visible floor",
+        "Zustand store owns a single global <audio> element mounted in root layout that survives route changes; store API: load(segment), play, pause, seekMs, setRate, position persistence to localStorage per segment",
+        "NextAuth remnants removed or isolated so the app builds without auth config; tsc strict passes with no any; npm run build succeeds"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Player screen /listen/[segmentId]",
+      "priority": 9,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Word highlight driven by requestAnimationFrame loop with binary search over word start times (audio.currentTime*1000), early bail when index unchanged; unit test for the binary search",
+        "Transcript virtualized with @tanstack/react-virtual; auto-scroll keeps active line ~40% viewport, disabled on user scroll with a 'back to current' affordance",
+        "Click any word seeks audio to word.start_ms/1000",
+        "Deep link ?t=<ms> starts playback at that position; share button writes current position into URL",
+        "Keyboard: space play/pause, ArrowLeft/ArrowRight seek 10s, '/' focuses search; Media Session API metadata + seek handlers wired",
+        "Playback speed 0.75/1/1.25/1.5, sleep timer, remembered position per segment via localStorage",
+        "Machine-transcript disclosure marker permanently visible on transcript views; prefers-reduced-motion makes highlight instant and disables smooth scroll",
+        "vitest unit tests for binary search + store logic pass; production build succeeds"
+      ]
+    },
+    {
+      "id": "US-010",
+      "title": "Pages: landing, surah, search, topics",
+      "priority": 10,
+      "passes": false,
+      "acceptanceCriteria": [
+        "/ is a search-first landing where the input is the hero",
+        "/surah/[n] lists ayahs (Uthmani face) with segment entry points",
+        "/search?q= shows results with matched snippet and inline play that starts audio at the result timestamp without navigation",
+        "/topics and /topics/[slug] render published topics and their chunks",
+        "Navigating between routes never interrupts playback (audio element in root layout)",
+        "npm run build passes; eslint passes"
+      ]
+    },
+    {
+      "id": "US-011",
+      "title": "Corrections & review (Phase 6)",
+      "priority": 11,
+      "passes": false,
+      "acceptanceCriteria": [
+        "POST /api/corrections/ accepts {chunk_id, word_start, word_end, suggested_text}, no account required, IP rate-limited",
+        "Django admin queue shows original vs suggested side-by-side with an audio play link for the exact word range",
+        "Admin approve action rewrites the affected TranscriptWord rows, bumps Transcript.version, and re-runs chunk text rebuild + reindex for affected chunks only (test proves version bump + text change)",
+        "Frontend: selecting words in the transcript offers 'suggest a correction' posting to the API",
+        "is_human_reviewed surfaces in transcript API and as a subtle verified state in UI"
+      ]
+    },
+    {
+      "id": "US-012",
+      "title": "Topics & discovery (Phase 7)",
+      "priority": 12,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Topic(slug, name_ar, description_ar, is_published default False) + ChunkTopic(chunk, topic, score) models",
+        "build_topics management command clusters chunk embeddings (HDBSCAN if available, KMeans fallback) and creates unpublished topics with pluggable labeler (LLM labeler stubbed, interface real)",
+        "Topics API only exposes is_published=True (test proves unpublished hidden)",
+        "Related-passages endpoint: nearest neighbours by embedding excluding same segment, used by player UI"
+      ]
+    },
+    {
+      "id": "US-013",
+      "title": "Clip cards (Phase 8)",
+      "priority": 13,
+      "passes": false,
+      "acceptanceCriteria": [
+        "POST /api/clips/ validates 15-60s range (hard cap 60s), enqueues Celery render; GET /api/clips/{id}/ reports status + URL",
+        "Render task builds ASS subtitle file with per-word \\k karaoke timing from TranscriptWord and burns onto 1080x1920 canvas, audio trimmed via -ss/-to, output H.264+AAC (verified by ffprobe in test with synthesized audio)",
+        "Renders cached by (segment_id, start_ms, end_ms, preset): second request returns existing clip without re-render (test)",
+        "3 visual presets defined server-side; every clip carries site-URL attribution text",
+        "/clip/[id] share page with OG video tags + direct download link"
+      ]
+    },
+    {
+      "id": "US-014",
+      "title": "Offline & PWA (Phase 9)",
+      "priority": 14,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Serwist service worker: precache shell, stale-while-revalidate for transcripts, cache-first for ayah text",
+        "Save-for-offline per segment: downloads audio + transcript into Cache Storage with storage usage indicator and per-item delete",
+        "Arabic manifest with maskable icons; installable",
+        "npm run build succeeds with the SW registered in production build only"
+      ]
+    },
+    {
+      "id": "US-015",
+      "title": "Production hardening (Phase 10)",
+      "priority": 15,
+      "passes": false,
+      "acceptanceCriteria": [
+        "docker-compose.prod.yml runs web, worker, beat, postgres(pgvector), redis, meilisearch, caddy; R2 env vars wired for audio storage",
+        "/healthz (liveness) and /readyz (DB+redis+meili checks) endpoints exist and are tested",
+        "scripts/backup.sh does pg_dump to S3/R2 and scripts/restore.sh restores; restore verified against a throwaway database in a test or documented verified run",
+        "Structured JSON logging in prod settings; Sentry initialization behind SENTRY_DSN env var on both backend and frontend",
+        "sitemap.xml covers surahs and ayahs; per-ayah/per-segment SEO metadata in frontend",
+        "DEPLOY.md documents cold deploy from scratch"
+      ]
+    },
+    {
+      "id": "US-016",
+      "title": "Full-stack integration verification",
+      "priority": 16,
+      "passes": false,
+      "acceptanceCriteria": [
+        "make dev brings up the full stack; import_quran completes (114/6236) against the docker db",
+        "A synthesized audio fixture runs the whole pipeline (stub engines) end-to-end producing indexed chunks; /api/search/?q= returns the chunk with correct start_ms",
+        "make test green: full pytest suite + vitest suite",
+        "make lint green: ruff + eslint + tsc (mypy allowed advisory)",
+        "Frontend production build passes",
+        "progress.txt records learnings; all work committed with conventional commits"
+      ]
+    }
+  ]
+}

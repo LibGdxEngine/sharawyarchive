@@ -1,9 +1,8 @@
-version: '3.8'
 
 services:
   db:
-    image: postgres:16-alpine
-    container_name: starter_db
+    image: pgvector/pgvector:pg16
+    container_name: shaarawy_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -20,7 +19,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: starter_redis
+    container_name: shaarawy_redis
     volumes:
       - redis_data:/data
     ports:
@@ -31,11 +30,46 @@ services:
       timeout: 5s
       retries: 5
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.15
+    container_name: shaarawy_meilisearch
+    environment:
+      - MEILI_MASTER_KEY=devmasterkey
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_ENV=development
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - "7700:7700"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7700/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: shaarawy_minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: starter_backend
+    container_name: shaarawy_backend
     volumes:
       - ./backend:/app
     environment:
@@ -47,10 +81,20 @@ services:
       - DB_PASSWORD=postgres
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - MEILI_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=devmasterkey
+      - AUDIO_S3_ENDPOINT_URL=http://minio:9000
+      - AUDIO_S3_BUCKET=shaarawy
+      - AUDIO_S3_ACCESS_KEY_ID=minioadmin
+      - AUDIO_S3_SECRET_ACCESS_KEY=minioadmin
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -59,7 +103,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: starter_celery_worker
+    container_name: shaarawy_celery_worker
     command: celery -A core worker -l info
     volumes:
       - ./backend:/app
@@ -72,17 +116,27 @@ services:
       - DB_PASSWORD=postgres
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - MEILI_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=devmasterkey
+      - AUDIO_S3_ENDPOINT_URL=http://minio:9000
+      - AUDIO_S3_BUCKET=shaarawy
+      - AUDIO_S3_ACCESS_KEY_ID=minioadmin
+      - AUDIO_S3_SECRET_ACCESS_KEY=minioadmin
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: starter_frontend
+    container_name: shaarawy_frontend
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -100,7 +154,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: starter_caddy
+    container_name: shaarawy_caddy
     restart: unless-stopped
     ports:
       - "80:80"
@@ -115,5 +169,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  meili_data:
+  minio_data:
   caddy_data:
   caddy_config:

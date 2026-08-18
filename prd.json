@@ -184,7 +184,7 @@
       "id": "US-014",
       "title": "Offline & PWA (Phase 9)",
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Serwist service worker: precache shell, stale-while-revalidate for transcripts, cache-first for ayah text",
         "Save-for-offline per segment: downloads audio + transcript into Cache Storage with storage usage indicator and per-item delete",

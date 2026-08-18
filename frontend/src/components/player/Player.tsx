@@ -5,6 +5,7 @@ import { useAudioStore } from "@/lib/audio-store";
 import type { Track } from "@/lib/audio-store";
 import { kindLabel } from "@/lib/format";
 import ShareButton from "./ShareButton";
+import OfflineButton from "./OfflineButton";
 import TranscriptView from "./TranscriptView";
 import type { Segment, Transcript } from "@/types/models";
 
@@ -71,15 +72,24 @@ export default function Player({ segment, transcript, startMs }: PlayerProps) {
       </header>
 
       <div className="mb-4 border-y border-[var(--color-border-subtle)] py-3">
-        <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
-          النص مُفرَّغ آليًا وقد يحتوي على أخطاء — نص القرآن الكريم ليس من
-          التفريغ الآلي
-          {transcript.is_human_reviewed ? (
-            <span className="mx-2 inline-block rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-ink-faint)]">
-              مُراجَع
-            </span>
-          ) : null}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
+            النص مُفرَّغ آليًا وقد يحتوي على أخطاء — نص القرآن الكريم ليس من
+            التفريغ الآلي
+            {transcript.is_human_reviewed ? (
+              <span className="mx-2 inline-block rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-ink-faint)]">
+                مُراجَع
+              </span>
+            ) : null}
+          </p>
+          <OfflineButton
+            key={segment.id}
+            segmentId={segment.id}
+            title={segment.title}
+            audioUrl={segment.audio_url}
+            waveformUrl={segment.waveform_url}
+          />
+        </div>
       </div>
 
       <TranscriptView segmentId={segment.id} words={transcript.words} />

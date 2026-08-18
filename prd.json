@@ -146,7 +146,7 @@
       "id": "US-011",
       "title": "Corrections & review (Phase 6)",
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "POST /api/corrections/ accepts {chunk_id, word_start, word_end, suggested_text}, no account required, IP rate-limited",
         "Django admin queue shows original vs suggested side-by-side with an audio play link for the exact word range",
@@ -159,7 +159,7 @@
       "id": "US-012",
       "title": "Topics & discovery (Phase 7)",
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Topic(slug, name_ar, description_ar, is_published default False) + ChunkTopic(chunk, topic, score) models",
         "build_topics management command clusters chunk embeddings (HDBSCAN if available, KMeans fallback) and creates unpublished topics with pluggable labeler (LLM labeler stubbed, interface real)",
@@ -196,7 +196,7 @@
       "id": "US-015",
       "title": "Production hardening (Phase 10)",
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "docker-compose.prod.yml runs web, worker, beat, postgres(pgvector), redis, meilisearch, caddy; R2 env vars wired for audio storage",
         "/healthz (liveness) and /readyz (DB+redis+meili checks) endpoints exist and are tested",

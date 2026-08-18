@@ -81,3 +81,59 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 Migrations run on container start. Meilisearch reindexing is only needed when
 chunk data changes (`python manage.py shell` → `search.services.ensure_chunks_index()`
 + reindex, or re-run the pipeline `index` stage).
+
+## 7. Observability
+
+### Sentry
+
+Set `SENTRY_DSN` in `.env` to your project DSN.  The backend initialises Sentry
+(Django + Celery integrations) automatically on startup when the variable is
+non-empty.  Leave it unset or empty to disable — no import errors occur either
+way.  Optionally set `SENTRY_TRACES_SAMPLE_RATE` (float 0–1, default 0) for
+performance tracing.
+
+```env
+SENTRY_DSN=https://<key>@o<org>.ingest.sentry.io/<project>
+SENTRY_TRACES_SAMPLE_RATE=0.1
+```
+
+### Structured JSON logs
+
+In production every Django/Celery log line is a single-line JSON object:
+
+```json
+{"timestamp":"2024-01-15T12:34:56.789123+00:00","level":"INFO","logger":"django.request","message":"GET /healthz 200"}
+```
+
+Tail them with:
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f backend
+```
+
+Parse and filter with `jq`:
+
+```bash
+docker compose -f docker-compose.prod.yml logs backend | jq 'select(.level=="ERROR")'
+```
+
+### Health probes
+
+| Endpoint | Purpose | Expected response |
+|---|---|---|
+| `GET /healthz` | Liveness — process is up | `{"status":"ok"}` HTTP 200 |
+| `GET /readyz` | Readiness — db/redis/meilisearch | `{"db":true,"redis":true,"meilisearch":true}` HTTP 200 |
+
+Use these as Docker/Kubernetes health-check targets.
+
+### Sitemap
+
+```
+https://$DOMAIN/sitemap.xml           # index → two child sitemaps
+https://$DOMAIN/sitemap-quran.xml     # 114 surahs + 6 236 ayahs
+https://$DOMAIN/sitemap-segments.xml  # indexed audio segments
+```
+
+Submit `https://$DOMAIN/sitemap.xml` to Google Search Console.
+Set `SITE_BASE_URL=https://$DOMAIN` in `.env` so URLs in the sitemap use the
+canonical domain (default `http://localhost:3000`).

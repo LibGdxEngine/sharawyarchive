@@ -1,6 +1,6 @@
 import os
 
-from .base import *
+from .base import *  # noqa: F401, F403
 
 # Enforce secret key configuration in production
 SECRET_KEY = os.environ['SECRET_KEY']
@@ -47,3 +47,61 @@ if SECURE_SSL_REDIRECT:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+# Sitemap base URL (no trailing slash).
+SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "http://localhost:3000")
+
+# ---------------------------------------------------------------------------
+# Structured JSON logging
+# ---------------------------------------------------------------------------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "core.logging.JSONFormatter",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+        },
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "celery": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+}
+
+# Suppress noisy third-party loggers.
+for _noisy in ("boto3", "botocore", "urllib3", "s3transfer"):
+    LOGGING["loggers"][_noisy] = {  # type: ignore[index]
+        "handlers": ["console"],
+        "level": "WARNING",
+        "propagate": False,
+    }
+
+# ---------------------------------------------------------------------------
+# Sentry — no-op when SENTRY_DSN is absent.
+# ---------------------------------------------------------------------------
+from core.observability import maybe_init_sentry  # noqa: E402
+
+maybe_init_sentry()

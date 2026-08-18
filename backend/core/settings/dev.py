@@ -1,9 +1,18 @@
 from dotenv import load_dotenv
 
-from .base import *
+from .base import *  # noqa: F401, F403
 
-# Load dev environment file if available
-load_dotenv(os.path.join(BASE_DIR, '.env.dev'))
+# Load .env.dev from backend/ first (BASE_DIR), then repo root (BASE_DIR.parent).
+# Docker compose mounts the file at the repo root; bare-venv runs expect it there
+# too.  First hit wins; missing file is silently skipped.
+_env_candidates = [
+    BASE_DIR / ".env.dev",
+    BASE_DIR.parent / ".env.dev",
+]
+for _env_path in _env_candidates:
+    if _env_path.exists():
+        load_dotenv(_env_path, override=False)
+        break
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-secret-key-template-project-1234')
 
@@ -37,3 +46,6 @@ if all([DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT]):
 
 # CORS settings for dev
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Sitemap base URL
+SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "http://localhost:3000")

@@ -1,118 +1,189 @@
-# Full-Stack Dockerized Boilerplate (Next.js + Django)
+# أرشيف الشعراوي — Sha'rawy Archive
 
-A production-ready template incorporating a modern frontend, powerful backend, caching, task worker queues, and an automated HTTPS proxy. Built to work out of the box with Docker.
-
-## Tech Stack
-*   **Frontend**: [Next.js](https://nextjs.org/) (React, TypeScript, Tailwind CSS v4)
-*   **Backend**: [Django](https://www.djangoproject.com/) (REST Framework, WhiteNoise)
-*   **Database**: [PostgreSQL](https://www.postgresql.org/)
-*   **Caching & Broker**: [Redis](https://redis.io/)
-*   **Task Queue**: [Celery](https://docs.celeryq.dev/en/stable/)
-*   **Reverse Proxy**: [Caddy](https://caddyserver.com/)
+Searchable audio archive of Sheikh Mohamed Metwally El-Sha'rawy.  Type a
+phrase, land on the exact second the Sheikh said it, and watch the words
+highlight as he speaks.
 
 ---
 
-## Project Structure
+## What it is
+
+Every other Sha'rawy site is a list of MP3 files.  This one is *searchable
+audio*: forced-aligned transcripts map each word to its millisecond position so
+search results link directly to the audio moment, and a highlight loop drives
+real-time word highlighting during playback.
+
+Two content kinds:
+
+- **Recitation** — Quran recitation with word-level Uthmani text displayed.
+- **Khawatir** — sermon/commentary segments, fully indexed and searchable.
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14 (App Router, TypeScript, Tailwind CSS v4) |
+| Backend | Django 5 + Django REST Framework |
+| Database | PostgreSQL 16 with pgvector (HNSW index for embeddings) |
+| Search | Meilisearch (lexical) + pgvector cosine (semantic), RRF hybrid |
+| Task queue | Celery + Redis |
+| Object storage | Cloudflare R2 (zero egress), presigned URLs |
+| Ingestion pipeline | faster-whisper ASR, CTC forced aligner, ffmpeg |
+| Reverse proxy | Caddy (automatic HTTPS) |
+
+---
+
+## Repo layout
 
 ```text
-starter_project/
-├── backend/                  # Django backend
-│   ├── api/                  # Django App (endpoints & tasks)
-│   ├── core/                 # Django settings configuration
-│   │   ├── settings/
-│   │   │   ├── base.py       # Shared settings
-│   │   │   ├── dev.py        # Development settings
-│   │   │   └── prod.py       # Production-hardened settings
-│   ├── Dockerfile            # Dev Backend image configuration
-│   ├── Dockerfile.prod       # Prod Backend image configuration
-│   ├── entrypoint.sh         # Startup check & database migrations script
-│   └── requirements.txt      # Python dependencies
-├── frontend/                 # Next.js frontend
-│   ├── src/                  # Next.js app pages (App Router)
-│   ├── Dockerfile            # Dev Frontend image configuration
-│   ├── Dockerfile.prod       # Prod Frontend image configuration (multi-stage)
-│   └── next.config.ts        # Next.js config (standalone build mode enabled)
-├── caddy/                    # Web server reverse proxy configuration
-│   ├── Caddyfile             # Production Caddy routing (SSL active)
-│   └── Caddyfile.dev         # Development Caddy routing
-├── docker-compose.yml        # Development Docker Compose
-├── docker-compose.prod.yml   # Production Docker Compose
-├── .env.dev                  # Dev environment variables
-└── .env.prod                 # Prod environment variables (with placeholders)
+shaarawy/
+├── backend/
+│   ├── core/           # Django project — settings, URLs, sitemaps, observability
+│   ├── api/            # Health probes (/healthz, /readyz), OpenAPI schema
+│   ├── quran/          # Canonical Quran text (Surah, Ayah) — read-only reference
+│   ├── corpus/         # Audio corpus: Source, AudioAsset, Segment, Transcript, Chunk
+│   ├── search/         # Hybrid search service (Meilisearch + pgvector + RRF)
+│   ├── clips/          # Clip render jobs (Celery + ffmpeg + ASS karaoke)
+│   ├── accounts/       # User accounts
+│   ├── requirements.txt
+│   └── manage.py
+├── pipeline/           # Ingestion pipeline (GPU worker, not imported by Django)
+│   ├── run.py          # Entry point: python -m pipeline.run
+│   ├── parsers.py      # Filename → surah/ayah range parser
+│   └── requirements.txt
+├── frontend/           # Next.js app (App Router)
+│   └── src/
+│       └── app/        # Pages: /, /surah/[n], /listen/[id], /search, /topics
+├── caddy/              # Caddyfile (prod) + Caddyfile.dev
+├── scripts/            # backup.sh, restore.sh
+├── docker-compose.yml          # Development stack
+├── docker-compose.prod.yml     # Production stack
+├── .env.dev            # Dev environment variables (checked in with safe defaults)
+├── .env.prod           # Prod template — copy and edit every change-me value
+├── Makefile
+└── DEPLOY.md           # Cold-deploy runbook
 ```
 
 ---
 
-## Quick Start (Development)
+## Quick start (development)
 
-### 1. Prerequisites
-Ensure you have Docker and Docker Compose installed:
-*   [Docker Engine](https://docs.docker.com/engine/install/)
-*   [Docker Compose](https://docs.docker.com/compose/install/)
+### Prerequisites
 
-### 2. Run the Development Server
-From the root of the project, execute:
-```bash
-make up
-```
-Or to build and launch from scratch:
-```bash
-make build && make up
-```
-This starts PostgreSQL (`db`), Redis (`redis`), Django (`backend`), Celery (`celery_worker`), Next.js (`frontend`), and Caddy (`caddy`) in the background.
+- Docker + Compose v2
+- GNU Make
 
-To watch all logs:
+### 1. Start everything
+
 ```bash
-make logs
+make dev        # builds images, starts all services
 ```
 
-### 3. Verify
-Open your browser and navigate to:
-*   **Web Dashboard**: [http://localhost](http://localhost)
-*   **Interactive API Docs (Swagger)**: [http://localhost/api/docs/](http://localhost/api/docs/)
-*   **Django API Status**: [http://localhost/api/status/](http://localhost/api/status/)
-*   **Django Admin Console**: [http://localhost/admin/](http://localhost/admin/)
+Or step by step:
 
-### 4. Create a Superuser
-To create a superuser for dashboard authentication, run:
 ```bash
-make createsuperuser
+docker compose up -d --build
+```
+
+Services started: PostgreSQL, Redis, Meilisearch, MinIO, Django backend,
+Celery worker, Next.js frontend, Caddy.
+
+### 2. Create the venv and install dependencies (bare-metal runs)
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/pip install -r backend/requirements-dev.txt
+```
+
+### 3. Run migrations and seed Quran text
+
+```bash
+cd backend
+../..venv/bin/python manage.py migrate
+../..venv/bin/python manage.py import_quran   # idempotent; 114 surahs / 6 236 ayahs
+```
+
+### 4. Verify
+
+```bash
+curl http://localhost/healthz          # {"status":"ok"}
+curl http://localhost/readyz           # {"db":true,"redis":true,"meilisearch":true}
+curl http://localhost/api/surahs/ | head -c 200
+```
+
+### 5. Run the ingestion pipeline
+
+```bash
+# Start a pipeline worker (GPU or CPU host with pipeline/requirements.txt)
+celery -A pipeline.celery_app worker -Q pipeline -l info
+
+# Ingest a folder of MP3 files
+python -m pipeline.run \
+    --folder /data/mp3s \
+    --source-title "خواطر التلفزيون المصري" \
+    --kind khawatir
+
+# Dry-run (parse filenames only, no DB writes)
+python -m pipeline.run --folder /data/mp3s --dry-run
 ```
 
 ---
 
-## Deployment (Production)
+## Make targets
 
-To spin up the production environment:
-
-1.  **Configure environment variables**: Copy or rename `.env.prod` and configure your credentials, database password, secret keys, domain name, and trusted origins.
-2.  **Run the production stack**:
-    ```bash
-    make prod-build && make prod-up
-    ```
-3.  **Logs verification**:
-    ```bash
-    docker compose -f docker-compose.prod.yml logs -f
-    ```
-
-### Production Best Practices Implemented:
-*   **Security Policies**: Django is run under a non-root system user (`django`) and Next.js under a non-root node user (`nextjs`).
-*   **Django Hardening**: SECURE COOKIES, HSTS, SSL redirects, and strict CORS/CSRF configurations are loaded dynamically in `core.settings.prod`.
-*   **Next.js Standalone**: Docker builds utilize multi-stage caching and output `standalone` folder tracking, yielding production images under 150MB.
-*   **Caddy Routing**: Automated HTTPS management, SSL redirection, static compression (gzip and zstd), and logging to file.
-*   **WhiteNoise**: Compresses and creates unique hashes for Django static files (`CompressedManifestStaticFilesStorage`) to leverage browser caching.
+| Target | Description |
+|---|---|
+| `make dev` | Start the development stack (builds if needed) |
+| `make be` | Run the Django dev server outside Docker |
+| `make fe` | Run the Next.js dev server outside Docker |
+| `make migrate` | Apply Django migrations |
+| `make import-quran` | Run `import_quran` management command |
+| `make types` | Generate TypeScript types from the OpenAPI schema |
+| `make test` | Run the full backend test suite |
+| `make lint` | Run ruff on the backend |
+| `make prod-build` | Build production Docker images |
+| `make prod-up` | Start the production stack |
+| `make logs` | Tail all service logs |
+| `make createsuperuser` | Create a Django admin superuser |
 
 ---
 
-## Service Verification Endpoints
+## Testing
 
-### 1. Hello World API
-Route: `GET /api/hello/`
-Returns a simple JSON payload showing backend connection success.
+```bash
+cd backend
+DB_HOST=localhost DB_PORT=5432 DB_NAME=api_pg DB_USER=postgres DB_PASSWORD=postgres \
+    ../.venv/bin/python -m pytest -q
+```
 
-### 2. Health & Connections API
-Route: `GET /api/status/`
-Performs dynamic, runtime connection validation:
-1.  **Database Connection**: Attempts a raw check to ensure PostgreSQL is up.
-2.  **Redis Connection**: Sets and gets a temporary cache key to verify Redis is operational.
-3.  **Celery Worker Integration**: Fires an async Celery task (`test_celery_task.delay(4, 5)`) to verify background queue processing.
+The test suite covers: health probes, throttling, corpus/quran models, search
+ranking, clip rendering, JSON log formatter, Sentry init, sitemap XML validity,
+Arabic normalisation (≥50 fixture pairs).
+
+---
+
+## Non-negotiable rules
+
+1. **Quran text never from ASR.** Every row in `quran.Ayah` is imported from
+   Tanzil (`import_quran`) and treated as read-only.  Machine transcripts in
+   `corpus.Transcript` always carry a "machine transcript" marker.
+
+2. **Normalised search.** All search input and indexed text passes through
+   `corpus.arabic.normalize_for_index` (NFC → strip harakat → hamza/alef
+   unification → teh marbuta → alef maqsura → collapse whitespace).
+
+3. **Integer milliseconds.** All durations, word offsets, and audio positions
+   are stored and served as integer milliseconds.  Never floats, never seconds.
+
+4. **Presigned URLs.** Raw R2 storage keys never leave the backend.  Audio and
+   waveform URLs are presigned with a 6-hour TTL, generated per request.
+
+---
+
+## Deployment
+
+See [DEPLOY.md](DEPLOY.md) for the full cold-deploy runbook including backups,
+seed data, Sentry, and sitemap submission.

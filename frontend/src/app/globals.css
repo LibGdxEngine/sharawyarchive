@@ -22,9 +22,19 @@
   --color-accent:      #1a6b4a;
   --color-accent-bg:   #d4eee3;
 
-  /* Font families injected by next/font/local */
-  --font-quran: "Amiri Quran", "Amiri", serif;
-  --font-ui:    "IBM Plex Sans Arabic", "Tahoma", "Arial", sans-serif;
+  /* Height of the fixed player bar — pages reserve this much bottom room. */
+  --player-bar-height: 4.5rem;
+}
+
+/*
+ * --font-quran / --font-ui are set on <html> by next/font/local
+ * (src/fonts/index.ts). They are deliberately NOT redeclared here: a :root
+ * declaration would tie with the generated font class on the same element and
+ * shadow the real, hashed @font-face family names.
+ */
+
+@media (min-width: 640px) {
+  :root { --player-bar-height: 3.75rem; }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -61,8 +71,13 @@
   --color-accent-bg:   #0d2e1f;
 }
 
-/* Tailwind v4 theme tokens */
-@theme {
+/*
+ * Tailwind v4 theme tokens.
+ * `inline` keeps Tailwind from re-emitting these names into :root — the
+ * authoritative values live in the :root / media-query blocks above (and, for
+ * the fonts, on <html> via next/font), so utilities read them through var().
+ */
+@theme inline {
   --font-quran: var(--font-quran);
   --font-ui:    var(--font-ui);
 
@@ -102,6 +117,36 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+/* ============================================================
+   Shared primitives
+   ============================================================ */
+
+/* The one content measure used across every reading surface (DESIGN.md). */
+.reading-column {
+  width: min(680px, 100% - 2rem);
+  margin-inline: auto;
+}
+
+/* Room for the fixed player bar so it never covers the last line. */
+.page-shell {
+  padding-block-end: calc(var(--player-bar-height) + 2rem);
+}
+
+/* Quranic material — Amiri Quran needs room for harakat above and below. */
+.quran-text {
+  font-family: var(--font-quran);
+  line-height: 2.2;
+}
+
+/* Active-word highlight — the signature element (DESIGN.md). */
+.word-active {
+  background-color: var(--color-accent-bg);
+  color: var(--color-accent);
+  border-radius: 2px;
+  padding: 0 2px;
+  transition: background-color 80ms ease-out, color 80ms ease-out;
 }
 
 /* Respect prefers-reduced-motion */

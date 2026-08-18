@@ -1,0 +1,1133 @@
+openapi: 3.0.3
+info:
+  title: Sha'rawy Archive API
+  version: 1.0.0
+  description: 'Read API for the Sha''rawy Archive: the Quran text, the audio corpus
+    (segments, machine transcripts, chunks), search, topics, plus correction submissions
+    and clip render jobs. All timestamps are integer milliseconds. Audio and waveform
+    URLs are presigned and short-lived; raw storage keys never leave the backend.'
+paths:
+  /api/ayahs/{surah}/{ayah}/:
+    get:
+      operationId: ayah_retrieve
+      description: |-
+        ``GET /api/ayahs/{surah}/{ayah}/`` — the verse and the segments whose
+        declared ayah range covers it. A segment with no range covers nothing.
+      parameters:
+      - in: path
+        name: ayah
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: surah
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ayahs
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AyahDetail'
+          description: ''
+  /api/clips/:
+    post:
+      operationId: clip_create
+      description: |-
+        ``POST /api/clips/`` — enqueue a render, or hand back the one that is
+        already running.
+
+        The (segment, range, preset) tuple is unique, which makes the job table its
+        own cache: the second person to share the same passage joins the first
+        person's render instead of starting another. ``202`` means "queued by you",
+        ``200`` means "already queued".
+      tags:
+      - clips
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClipCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClipCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClipCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClipStatus'
+          description: ''
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClipStatus'
+          description: ''
+  /api/clips/{id}/:
+    get:
+      operationId: clips_retrieve
+      description: '``GET /api/clips/{id}/`` — poll a job. Never cached: status moves.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - clips
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClipDetail'
+          description: ''
+  /api/corrections/:
+    post:
+      operationId: correction_create
+      description: |-
+        ``POST /api/corrections/`` — anonymous, IP-throttled suggestion inbox.
+
+        Nothing here touches the transcript: a correction is reviewed and applied
+        by a human later (Phase 6). The response is a bare receipt so a submitter
+        cannot use the endpoint to enumerate the queue.
+      tags:
+      - corrections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CorrectionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CorrectionCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionCreated'
+          description: ''
+  /api/search/:
+    get:
+      operationId: search_retrieve
+      description: |-
+        ``GET /api/search/?q=&mode=&kind=&surah=&page=`` (API_CONTRACT.md).
+
+        Never cached: results move with every pipeline run.
+      parameters:
+      - in: query
+        name: kind
+        schema:
+          type: string
+      - in: query
+        name: mode
+        schema:
+          type: string
+          enum:
+          - hybrid
+          - lexical
+          - semantic
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: surah
+        schema:
+          type: integer
+      tags:
+      - search
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/segments/{id}/:
+    get:
+      operationId: segments_retrieve
+      description: '``GET /api/segments/{id}/`` — metadata plus presigned media URLs.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - segments
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentDetail'
+          description: ''
+  /api/segments/{id}/related/:
+    get:
+      operationId: segment_related_list
+      description: |-
+        ``GET /api/segments/{id}/related/`` — nearest passages elsewhere.
+
+        The segment is reduced to the centroid of its chunk embeddings, and the
+        corpus is searched by cosine distance to that centroid with the segment's
+        own chunks excluded. Cosine distance ignores magnitude, so the mean needs
+        no renormalization. A segment that has not been embedded yet returns ``[]``
+        rather than an error — embedding lags ingestion.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - segments
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChunkResult'
+          description: ''
+  /api/segments/{id}/transcript/:
+    get:
+      operationId: segment_transcript_retrieve
+      description: |-
+        ``GET /api/segments/{id}/transcript/`` — the whole word array.
+
+        Content-addressed by ``Transcript.version``: an approved correction bumps
+        the version, so the client asks for a new ``?v=`` rather than revalidating.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - segments
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transcript'
+          description: ''
+  /api/surahs/:
+    get:
+      operationId: surahs_list
+      description: '``GET /api/surahs/`` — all 114, unpaginated, with segment counts.'
+      tags:
+      - surahs
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SurahList'
+          description: ''
+  /api/surahs/{number}/:
+    get:
+      operationId: surah_retrieve
+      description: '``GET /api/surahs/{n}/?page=`` — the surah plus one page of ayahs.'
+      parameters:
+      - in: path
+        name: number
+        schema:
+          type: integer
+        required: true
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: 1-based, 20 ayahs per page.
+      tags:
+      - surahs
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SurahDetail'
+          description: ''
+  /api/token/:
+    post:
+      operationId: token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenObtainPair'
+          description: ''
+  /api/token/refresh/:
+    post:
+      operationId: token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/token/verify/:
+    post:
+      operationId: token_verify_create
+      description: |-
+        Takes a token and indicates if it is valid.  This view provides no
+        information about a token's fitness for a particular use.
+      tags:
+      - token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenVerifyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenVerifyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenVerifyRequest'
+        required: true
+      responses:
+        '200':
+          description: No response body
+  /api/topics/:
+    get:
+      operationId: topics_list
+      description: |-
+        ``GET /api/topics/`` — the published topics only.
+
+        An unpublished topic is an unreviewed cluster label, so it is invisible
+        rather than merely unlinked: nothing about it leaves the backend.
+      tags:
+      - topics
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopicList'
+          description: ''
+  /api/topics/{slug}/:
+    get:
+      operationId: topic_retrieve
+      description: '``GET /api/topics/{slug}/`` — the topic and its passages, best
+        first.'
+      parameters:
+      - in: path
+        name: slug
+        schema:
+          type: string
+        required: true
+      tags:
+      - topics
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicDetail'
+          description: ''
+components:
+  schemas:
+    AyahDetail:
+      type: object
+      description: '``GET /api/ayahs/{surah}/{ayah}/`` — the verse and what covers
+        it.'
+      properties:
+        surah:
+          type: integer
+        number:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        text_uthmani:
+          type: string
+        text_imlaei:
+          type: string
+        juz:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        page:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Madani mushaf page, 1-604.
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoveringSegment'
+          readOnly: true
+      required:
+      - juz
+      - number
+      - page
+      - segments
+      - surah
+      - text_imlaei
+      - text_uthmani
+    AyahMatch:
+      type: object
+      description: An exact verse resolved from the query itself, shown above the
+        hits.
+      properties:
+        surah:
+          type: integer
+        number:
+          type: integer
+        text_uthmani:
+          type: string
+        surah_name_ar:
+          type: string
+      required:
+      - number
+      - surah
+      - surah_name_ar
+      - text_uthmani
+    AyahPage:
+      type: object
+      description: 'The ``ayahs`` envelope: a fixed-size page, not a DRF paginator
+        shape.'
+      properties:
+        count:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SurahAyah'
+      required:
+      - count
+      - page
+      - page_size
+      - results
+    ChunkResult:
+      type: object
+      description: |-
+        The search-result shape, reused wherever chunks are surfaced (topics,
+        related passages) so one renderer on the frontend handles all of them.
+        Mirrors :class:`search.services.SearchResult`.
+      properties:
+        chunk_id:
+          type: integer
+        segment_id:
+          type: integer
+        segment_title:
+          type: string
+        surah:
+          type: integer
+          nullable: true
+        ayah_start:
+          type: integer
+          nullable: true
+        ayah_end:
+          type: integer
+          nullable: true
+        kind:
+          type: string
+        text:
+          type: string
+        start_ms:
+          type: integer
+        end_ms:
+          type: integer
+      required:
+      - ayah_end
+      - ayah_start
+      - chunk_id
+      - end_ms
+      - kind
+      - segment_id
+      - segment_title
+      - start_ms
+      - surah
+      - text
+    ClipCreateRequest:
+      type: object
+      description: |-
+        ``POST /api/clips/``. Rendering is somebody's CPU, so the range is
+        checked against the segment before a job is ever created.
+      properties:
+        segment_id:
+          type: integer
+        start_ms:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        end_ms:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        preset:
+          $ref: '#/components/schemas/PresetEnum'
+      required:
+      - end_ms
+      - preset
+      - segment_id
+      - start_ms
+    ClipDetail:
+      type: object
+      description: |-
+        ``GET /api/clips/{id}/``. ``video_url`` appears only once the render
+        finished — a queued or failed job has nothing to hand out.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/ClipStatusEnum'
+        video_url:
+          type: string
+          format: uri
+          nullable: true
+          readOnly: true
+      required:
+      - id
+      - video_url
+    ClipStatus:
+      type: object
+      description: 'The body of both clip POST outcomes: created, or already queued.'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/ClipStatusEnum'
+      required:
+      - id
+    ClipStatusEnum:
+      enum:
+      - queued
+      - rendering
+      - done
+      - failed
+      type: string
+      description: |-
+        * `queued` - Queued
+        * `rendering` - Rendering
+        * `done` - Done
+        * `failed` - Failed
+    CorrectionCreateRequest:
+      type: object
+      description: |-
+        ``POST /api/corrections/``. Word offsets index ``TranscriptWord.idx``;
+        a one-word fix has ``word_start == word_end``.
+      properties:
+        chunk_id:
+          type: integer
+        word_start:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        word_end:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        suggested_text:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      required:
+      - chunk_id
+      - suggested_text
+      - word_end
+      - word_start
+    CorrectionCreated:
+      type: object
+      description: 'The 201 body: a receipt, nothing the submitter did not already
+        send.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/CorrectionStatusEnum'
+      required:
+      - id
+    CorrectionStatusEnum:
+      enum:
+      - pending
+      - approved
+      - rejected
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `approved` - Approved
+        * `rejected` - Rejected
+    CoveringSegment:
+      type: object
+      description: A segment listed under an ayah it covers.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        title:
+          type: string
+          maxLength: 255
+        ayah_start:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          nullable: true
+        ayah_end:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          nullable: true
+        duration_ms:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+      required:
+      - duration_ms
+      - id
+      - kind
+    Error:
+      type: object
+      description: The shape every 4xx in this API uses.
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
+    KindEnum:
+      enum:
+      - recitation
+      - khawatir
+      type: string
+      description: |-
+        * `recitation` - Recitation
+        * `khawatir` - Khawatir
+    ModeEnum:
+      enum:
+      - lexical
+      - semantic
+      - hybrid
+      type: string
+      description: |-
+        * `lexical` - lexical
+        * `semantic` - semantic
+        * `hybrid` - hybrid
+    PresetEnum:
+      enum:
+      - classic
+      - night
+      - light
+      type: string
+      description: |-
+        * `classic` - Classic
+        * `night` - Night
+        * `light` - Light
+    RevelationPlaceEnum:
+      enum:
+      - makkah
+      - madinah
+      type: string
+      description: |-
+        * `makkah` - Makkah
+        * `madinah` - Madinah
+    SearchResponse:
+      type: object
+      description: '``GET /api/search/`` — mirrors :class:`search.services.SearchResponse`.'
+      properties:
+        query:
+          type: string
+        mode:
+          $ref: '#/components/schemas/ModeEnum'
+        ayah_matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/AyahMatch'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChunkResult'
+        page:
+          type: integer
+        total:
+          type: integer
+      required:
+      - ayah_matches
+      - mode
+      - page
+      - query
+      - results
+      - total
+    SegmentDetail:
+      type: object
+      description: |-
+        ``GET /api/segments/{id}/``. Requires ``select_related`` on ``audio``,
+        ``source`` and ``transcript``.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        title:
+          type: string
+          maxLength: 255
+        surah:
+          type: integer
+          nullable: true
+        ayah_start:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          nullable: true
+        ayah_end:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          nullable: true
+        duration_ms:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        ordinal:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        audio_url:
+          type: string
+          format: uri
+          readOnly: true
+        waveform_url:
+          type: string
+          format: uri
+          readOnly: true
+        source:
+          allOf:
+          - $ref: '#/components/schemas/SourceBrief'
+          readOnly: true
+        transcript_version:
+          type: integer
+          nullable: true
+          readOnly: true
+        is_human_reviewed:
+          type: boolean
+          readOnly: true
+      required:
+      - audio_url
+      - duration_ms
+      - id
+      - is_human_reviewed
+      - kind
+      - source
+      - surah
+      - transcript_version
+      - waveform_url
+    SourceBrief:
+      type: object
+      description: Provenance line shown next to a segment.
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        kind:
+          type: string
+          maxLength: 50
+      required:
+      - kind
+      - title
+    SurahAyah:
+      type: object
+      description: One ayah inside a paginated surah page.
+      properties:
+        number:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        text_uthmani:
+          type: string
+        juz:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        page:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Madani mushaf page, 1-604.
+        sajda:
+          type: boolean
+        segment_count:
+          type: integer
+          readOnly: true
+      required:
+      - juz
+      - number
+      - page
+      - segment_count
+      - text_uthmani
+    SurahDetail:
+      type: object
+      description: '``GET /api/surahs/{n}/`` — surah head plus one page of its ayahs.'
+      properties:
+        number:
+          type: integer
+        name_ar:
+          type: string
+        name_en:
+          type: string
+        ayah_count:
+          type: integer
+        revelation_place:
+          $ref: '#/components/schemas/RevelationPlaceEnum'
+        ayahs:
+          $ref: '#/components/schemas/AyahPage'
+      required:
+      - ayah_count
+      - ayahs
+      - name_ar
+      - name_en
+      - number
+      - revelation_place
+    SurahList:
+      type: object
+      description: One row of ``GET /api/surahs/``.
+      properties:
+        number:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        name_ar:
+          type: string
+          maxLength: 100
+        name_ar_plain:
+          type: string
+          description: name_ar passed through corpus.arabic.normalize_for_index.
+          maxLength: 100
+        name_en:
+          type: string
+          maxLength: 100
+        ayah_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        revelation_place:
+          $ref: '#/components/schemas/RevelationPlaceEnum'
+        segment_count:
+          type: integer
+          readOnly: true
+      required:
+      - ayah_count
+      - name_ar
+      - name_ar_plain
+      - name_en
+      - number
+      - revelation_place
+      - segment_count
+    TokenObtainPair:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - refresh
+    TokenObtainPairRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          writeOnly: true
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - password
+      - username
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    TokenVerifyRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - token
+    TopicDetail:
+      type: object
+      description: |-
+        ``GET /api/topics/{slug}/``. The view attaches ``chunks`` — the topic's
+        passages, best match first — before serialization.
+      properties:
+        slug:
+          type: string
+          maxLength: 100
+          pattern: ^[-a-zA-Z0-9_]+$
+        name_ar:
+          type: string
+          maxLength: 200
+        description_ar:
+          type: string
+        chunk_count:
+          type: integer
+          readOnly: true
+        chunks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChunkResult'
+          readOnly: true
+      required:
+      - chunk_count
+      - chunks
+      - name_ar
+      - slug
+    TopicList:
+      type: object
+      description: One row of ``GET /api/topics/``.
+      properties:
+        slug:
+          type: string
+          maxLength: 100
+          pattern: ^[-a-zA-Z0-9_]+$
+        name_ar:
+          type: string
+          maxLength: 200
+        description_ar:
+          type: string
+        chunk_count:
+          type: integer
+          readOnly: true
+      required:
+      - chunk_count
+      - name_ar
+      - slug
+    Transcript:
+      type: object
+      description: |-
+        ``GET /api/segments/{id}/transcript/``.
+
+        Declared for the schema only: the view assembles the word list straight
+        from ``values_list`` because running six thousand rows through a serializer
+        per request is pure overhead for a payload this mechanical.
+      properties:
+        version:
+          type: integer
+        engine:
+          type: string
+        is_human_reviewed:
+          type: boolean
+        words:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranscriptWord'
+      required:
+      - engine
+      - is_human_reviewed
+      - version
+      - words
+    TranscriptWord:
+      type: object
+      description: '``i`` index, ``t`` text, ``s``/``e`` start/end ms, ``c`` confidence.'
+      properties:
+        i:
+          type: integer
+        t:
+          type: string
+        s:
+          type: integer
+        e:
+          type: integer
+        c:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - c
+      - e
+      - i
+      - s
+      - t
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

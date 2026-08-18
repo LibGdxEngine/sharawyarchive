@@ -10,13 +10,7 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 
-from .views import hello_world, system_status
-
 urlpatterns = [
-    # Hello & Health status
-    path('hello/', hello_world, name='hello_world'),
-    path('status/', system_status, name='system_status'),
-
     # JWT Authentication Endpoints
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

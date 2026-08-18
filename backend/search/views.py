@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+
+from api.serializers import ErrorSerializer, SearchResponseSerializer
 
 from . import services
 
@@ -28,6 +32,20 @@ class SearchView(APIView):
     Never cached: results move with every pipeline run.
     """
 
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'search'
+
+    @extend_schema(
+        operation_id='search_retrieve',
+        parameters=[
+            OpenApiParameter('q', str, required=True),
+            OpenApiParameter('mode', str, enum=services.SEARCH_MODES),
+            OpenApiParameter('kind', str),
+            OpenApiParameter('surah', int),
+            OpenApiParameter('page', int),
+        ],
+        responses={200: SearchResponseSerializer, 400: ErrorSerializer},
+    )
     def get(self, request: Request) -> Response:
         query = request.query_params.get("q", "").strip()
         if not query:

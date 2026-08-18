@@ -89,7 +89,7 @@
       "id": "US-007",
       "title": "API layer",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Endpoints: GET /api/surahs/, /api/surahs/{n}/ (ayahs paginated by 20), /api/ayahs/{surah}/{ayah}/ (with covering segments), /api/segments/{id}/ (signed audio+waveform URLs), /api/segments/{id}/transcript/ (compact keys i,t,s,e,c), /api/search/, /api/topics/, /api/topics/{slug}/, POST /api/corrections/, GET+POST /api/clips/",
         "Transcript and ayah responses send Cache-Control: public, max-age=31536000, immutable (content-addressed by transcript version); search sends no-store",

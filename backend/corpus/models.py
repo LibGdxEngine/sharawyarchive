@@ -36,6 +36,12 @@ class PipelineRunStatus(models.TextChoices):
     SKIPPED = "skipped", "Skipped"
 
 
+class CorrectionStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+
+
 class Source(models.Model):
     """Where a body of audio came from, and under what rights."""
 
@@ -183,6 +189,75 @@ class Chunk(models.Model):
 
     def __str__(self) -> str:
         return f"chunk {self.idx} of transcript {self.transcript_id}"
+
+
+class Topic(models.Model):
+    """A theme the corpus keeps returning to, e.g. الصبر.
+
+    Deliberately minimal: Phase 7 clusters chunk embeddings and labels the
+    clusters, and hangs its machinery off these two tables. Nothing is visible
+    to readers until a human sets ``is_published``, because an unreviewed
+    cluster label is a guess.
+    """
+
+    slug = models.SlugField(max_length=100, unique=True)
+    name_ar = models.CharField(max_length=200)
+    description_ar = models.TextField(blank=True)
+    is_published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["slug"]
+
+    def __str__(self) -> str:
+        return f"{self.slug} ({self.name_ar})"
+
+
+class ChunkTopic(models.Model):
+    """Membership of a chunk in a topic, with the cluster's confidence."""
+
+    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name="topic_links")
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name="chunk_links")
+    score = models.FloatField()
+
+    class Meta:
+        ordering = ["topic_id", "-score"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["chunk", "topic"], name="chunktopic_unique_chunk_topic"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"chunk {self.chunk_id} in {self.topic_id} ({self.score:.3f})"
+
+
+class Correction(models.Model):
+    """A reader's proposed fix to a span of machine transcript.
+
+    Submitted anonymously and rate-limited by IP, so it is a suggestion queue,
+    not an edit: approving one is a separate reviewed action (Phase 6). Word
+    offsets are indices into ``TranscriptWord.idx`` of the chunk's transcript.
+    """
+
+    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name="corrections")
+    word_start = models.PositiveIntegerField()
+    word_end = models.PositiveIntegerField()
+    suggested_text = models.CharField(max_length=1000)
+    status = models.CharField(
+        max_length=16, choices=CorrectionStatus.choices, default=CorrectionStatus.PENDING
+    )
+    submitted_ip = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="correction_status_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"correction {self.pk} on chunk {self.chunk_id} ({self.status})"
 
 
 class PipelineRun(models.Model):

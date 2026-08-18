@@ -29,6 +29,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Transcripts are the biggest payload the API serves (thousands of words per
+    # segment) and compress ~5x, so gzip runs first and sees every response body.
+    'django.middleware.gzip.GZipMiddleware',
     'corsheaders.middleware.CorsMiddleware',  # Needs to be at the top
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # WhiteNoise static serving
@@ -114,14 +117,34 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Applied per view via ScopedRateThrottle + throttle_scope; anonymous
+    # readers are the only clients these write paths have (API_CONTRACT.md).
+    'DEFAULT_THROTTLE_RATES': {
+        'search': '30/min',
+        'corrections': '10/hour',
+        'clips': '5/hour',
+    },
 }
 
 # OpenAPI / Swagger configuration
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Dockerized Full-Stack Template API',
-    'DESCRIPTION': 'API documentation for our Next.js + Django starter project.',
+    'TITLE': "Sha'rawy Archive API",
+    'DESCRIPTION': (
+        "Read API for the Sha'rawy Archive: the Quran text, the audio corpus "
+        "(segments, machine transcripts, chunks), search, topics, plus "
+        'correction submissions and clip render jobs. All timestamps are '
+        'integer milliseconds. Audio and waveform URLs are presigned and '
+        'short-lived; raw storage keys never leave the backend.'
+    ),
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    # Two unrelated `status` fields would otherwise generate collided enum
+    # names like `Status127Enum` in the frontend types.
+    'ENUM_NAME_OVERRIDES': {
+        'ClipStatusEnum': 'clips.models.ClipStatus',
+        'CorrectionStatusEnum': 'corpus.models.CorrectionStatus',
+    },
 }
 
 # SimpleJWT configuration

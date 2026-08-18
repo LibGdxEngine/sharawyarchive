@@ -1,62 +1,70 @@
+"""Liveness and readiness probes.
+
+Mounted at the site root rather than under ``/api/`` so an orchestrator can
+reach them without knowing the API prefix. Plain Django views on purpose:
+``/healthz`` must answer without touching a single dependency, and neither
+probe belongs in the public OpenAPI schema.
+"""
+
+from __future__ import annotations
+
 import logging
 
-from django.core.cache import cache
+from django.conf import settings
 from django.db import connection
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-
-from .tasks import test_celery_task
+from django.http import HttpRequest, JsonResponse
+from django.views.decorators.http import require_GET
 
 logger = logging.getLogger(__name__)
 
-@api_view(['GET'])
-def hello_world(request):
-    """
-    Simple hello world API endpoint.
-    """
-    return Response({
-        "message": "Hello from the Django backend!",
-        "status": "success"
-    })
+__all__ = ['healthz', 'readyz']
 
-@api_view(['GET'])
-def system_status(request):
-    """
-    Checks the status of the Database, Redis (via cache), and triggers a Celery task.
-    """
-    status = {
-        "database": "down",
-        "redis": "down",
-        "celery": "unknown"
-    }
 
-    # Check database connection
+@require_GET
+def healthz(request: HttpRequest) -> JsonResponse:
+    """``GET /healthz`` — the process is up. No database, no network."""
+    return JsonResponse({'status': 'ok'})
+
+
+def _database_ok() -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT 1')
+        return cursor.fetchone() == (1,)
+
+
+def _redis_ok() -> bool:
+    import redis
+
+    client = redis.Redis.from_url(settings.CELERY_BROKER_URL, socket_timeout=2)
     try:
-        connection.ensure_connection()
-        status["database"] = "up"
-    except Exception as e:
-        logger.error(f"Database health check failed: {e}")
-        status["database"] = f"down: {str(e)}"
+        return bool(client.ping())
+    finally:
+        client.close()
 
-    # Check redis connection (Django cache backend)
-    try:
-        cache.set("health_check_key", "ok", timeout=5)
-        val = cache.get("health_check_key")
-        if val == "ok":
-            status["redis"] = "up"
-    except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
-        status["redis"] = f"down: {str(e)}"
 
-    # Trigger async celery task
-    try:
-        task = test_celery_task.delay(4, 5)
-        status["celery"] = {
-            "status": "triggered",
-            "task_id": task.id
-        }
-    except Exception as e:
-        logger.error(f"Celery task trigger failed: {e}")
-        status["celery"] = f"failed to trigger: {str(e)}"
+def _meilisearch_ok() -> bool:
+    from search.services import meili_client
 
-    return Response(status)
+    return meili_client().health().get('status') == 'available'
+
+
+CHECKS = {
+    'db': _database_ok,
+    'redis': _redis_ok,
+    'meilisearch': _meilisearch_ok,
+}
+
+
+@require_GET
+def readyz(request: HttpRequest) -> JsonResponse:
+    """``GET /readyz`` — every dependency answered. 503 names the ones that did
+    not, so a failing deploy says *which* backing service is missing."""
+    results = {}
+    for name, check in CHECKS.items():
+        try:
+            results[name] = check()
+        except Exception:
+            logger.exception('readiness check %s failed', name)
+            results[name] = False
+    status = 200 if all(results.values()) else 503
+    return JsonResponse(results, status=status)

@@ -60,7 +60,7 @@
       "id": "US-005",
       "title": "Ingestion pipeline: audio to timestamped words",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "pipeline/ package with own requirements.txt (heavy deps) and requirements-stub.txt (test deps only); Django never imports pipeline (verified by grep: no 'import pipeline' under backend/)",
         "pipeline/parsers.py: config-driven regex list loaded from pipeline/parser_patterns.json, parse_filename() returns surah/ayah range/kind/ordinal; CLI --dry-run prints parse results without writing",

@@ -1,0 +1,9 @@
+# Stub-engine profile: deliberately nothing beyond the backend's requirements.
+#
+# With ASR_BACKEND=stub and EMBEDDING_BACKEND=stub (the defaults) the pipeline
+# runs on Django + celery + boto3 + numpy alone, all of which the backend
+# already pins. ffmpeg/ffprobe are the only non-Python prerequisites.
+#
+#   pip install -r pipeline/requirements-stub.txt
+
+-r ../backend/requirements.txt

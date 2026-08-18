@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from quran.models import Surah
+from quran.models import Ayah, Surah
 from search.ayah_names import FAMOUS_AYAH_NAMES
 from search.services import parse_ayah_reference
 
@@ -48,10 +48,12 @@ def test_curated_names_resolve_when_the_ayah_exists(
     quran_slice: dict[int, Surah], name: str, reference: tuple[int, int]
 ) -> None:
     matches = parse_ayah_reference(name)
-    if reference in {(2, 255), (2, 282), (3, 61), (24, 35)}:
+    # Other suites (quran's session-scoped full import) may have populated
+    # ayahs beyond this fixture slice, so assert against actual DB state.
+    if Ayah.objects.filter(surah_id=reference[0], number=reference[1]).exists():
         (ayah,) = matches
         assert (ayah.surah_id, ayah.number) == reference
-    else:  # 9:5 — surah at-Tawbah is outside this fixture slice
+    else:
         assert matches == []
 
 
@@ -65,7 +67,7 @@ def test_curated_names_resolve_when_the_ayah_exists(
         "hello world",
         "2:9999",  # ayah out of range
         "999:1",  # surah out of range
-        "سورة الفيل 3",  # surah not in the fixture slice
+        "سورة مجهولة 3",  # no surah by that name
         "آية الفتح",  # not in the curated table
     ],
 )

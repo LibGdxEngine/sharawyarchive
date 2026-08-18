@@ -107,14 +107,18 @@ def quran_slice(db: None) -> dict[int, Surah]:
         (3, "آل عمران", "Aal-Imran", 200, "madinah", 89),
         (24, "النور", "An-Nur", 64, "madinah", 102),
     ):
-        surahs[number] = Surah.objects.create(
+        # update_or_create: the quran app's session-scoped import fixture may
+        # have already populated the full Quran in this test database.
+        surahs[number], _ = Surah.objects.update_or_create(
             number=number,
-            name_ar=name_ar,
-            name_ar_plain=normalize_for_index(name_ar),
-            name_en=name_en,
-            ayah_count=ayah_count,
-            revelation_place=place,
-            order_revealed=revealed,
+            defaults={
+                'name_ar': name_ar,
+                'name_ar_plain': normalize_for_index(name_ar),
+                'name_en': name_en,
+                'ayah_count': ayah_count,
+                'revelation_place': place,
+                'order_revealed': revealed,
+            },
         )
     for surah_number, ayah_number, text in (
         (2, 255, "ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ"),
@@ -122,15 +126,17 @@ def quran_slice(db: None) -> dict[int, Surah]:
         (3, 61, "فَمَنْ حَآجَّكَ فِيهِ مِنۢ بَعْدِ مَا جَآءَكَ مِنَ ٱلْعِلْمِ"),
         (24, 35, "ٱللَّهُ نُورُ ٱلسَّمَـٰوَٰتِ وَٱلْأَرْضِ"),
     ):
-        Ayah.objects.create(
+        Ayah.objects.update_or_create(
             surah=surahs[surah_number],
             number=ayah_number,
-            text_uthmani=text,
-            text_imlaei=text,
-            text_normalized=normalize_for_index(text),
-            juz=3,
-            hizb=5,
-            page=42,
+            defaults={
+                'text_uthmani': text,
+                'text_imlaei': text,
+                'text_normalized': normalize_for_index(text),
+                'juz': 3,
+                'hizb': 5,
+                'page': 42,
+            },
         )
     return surahs
 

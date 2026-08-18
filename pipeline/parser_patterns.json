@@ -1,0 +1,51 @@
+{
+  "_comment": [
+    "Filename patterns tried in order by pipeline.parsers.parse_filename().",
+    "The real Sha'rawy corpus naming is unknown until the archive lands, so THIS",
+    "FILE is the extension point: add an entry here (no Python change) when a new",
+    "naming scheme shows up, and check it with `python -m pipeline.parsers",
+    "--dry-run FOLDER` before running the ingest.",
+    "",
+    "Each entry: name (reported as ParseResult.pattern_name), regex (matched",
+    "case-insensitively against the filename WITHOUT its directory or extension),",
+    "kind ('recitation' | 'khawatir' | null to inherit the run's --kind), enabled.",
+    "Named groups, all optional: surah, ayah_start, ayah_end, ordinal."
+  ],
+  "patterns": [
+    {
+      "name": "khawatir_surah_ordinal",
+      "description": "khawatir_002_015, khawatir-002, khawatir 002 15 - title",
+      "regex": "^khawatir[ _-]+(?P<surah>\\d{1,3})(?:[ _-]+(?P<ordinal>\\d{1,4}))?(?:[ _-].*)?$",
+      "kind": "khawatir",
+      "enabled": true
+    },
+    {
+      "name": "surah_ayah_range",
+      "description": "surah-2-ayah-1-10, sura_2_aya_255",
+      "regex": "^(?:surah|sura|s)[ _-]+(?P<surah>\\d{1,3})[ _-]+(?:ayah|ayat|aya|a)[ _-]+(?P<ayah_start>\\d{1,3})(?:[ _-]+(?P<ayah_end>\\d{1,3}))?$",
+      "kind": "recitation",
+      "enabled": true
+    },
+    {
+      "name": "surah_episode",
+      "description": "s002e01, S002-E12",
+      "regex": "^s(?P<surah>\\d{1,3})[ _-]?e(?P<ordinal>\\d{1,4})$",
+      "kind": null,
+      "enabled": true
+    },
+    {
+      "name": "surah_title_ordinal",
+      "description": "002 - al-baqarah - 01",
+      "regex": "^(?P<surah>\\d{1,3})\\s*-\\s*.*?\\s*-\\s*(?P<ordinal>\\d{1,4})$",
+      "kind": null,
+      "enabled": true
+    },
+    {
+      "name": "surah_only",
+      "description": "002, 2",
+      "regex": "^(?P<surah>\\d{1,3})$",
+      "kind": null,
+      "enabled": true
+    }
+  ]
+}

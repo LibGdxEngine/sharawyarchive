@@ -1,0 +1,25 @@
+# Real-engine dependencies for a pipeline worker (GPU box / worker image).
+#
+# NOT installed in the dev virtualenv and NOT installed in the Django image:
+# the whole point of keeping pipeline/ outside backend/ is that the web
+# container never pulls torch. Install these only where ASR_BACKEND is set to
+# 'faster-whisper' or EMBEDDING_BACKEND to 'e5'.
+#
+#   pip install -r pipeline/requirements.txt
+#
+# The stub engines (the default everywhere else) need none of it — see
+# requirements-stub.txt.
+
+# Django ORM, celery, boto3, psycopg, numpy: the pipeline writes corpus rows.
+-r ../backend/requirements.txt
+
+# ASR: Whisper large-v3 through CTranslate2.
+faster-whisper>=1.0.0
+
+# Forced alignment: MMS-300m CTC aligner (pulls torch/torchaudio).
+ctc-forced-aligner>=0.1.0
+torch>=2.2.0
+torchaudio>=2.2.0
+
+# Embeddings: intfloat/multilingual-e5-large, 1024-dim (corpus.embeddings.E5Embedder).
+sentence-transformers>=3.0.0

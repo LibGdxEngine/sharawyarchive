@@ -1,0 +1,31 @@
+# Config for the standalone pipeline package. It is intentionally separate from
+# backend/pyproject.toml: the two are different processes with different
+# dependencies, and ruff/pytest pick the nearest config per file.
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "core.settings.dev"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "-q"
+# The Django project and the repo root (so `import pipeline` resolves) have to
+# be importable before pytest-django loads the settings module.
+pythonpath = ["..", "../backend"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# These two modules must call django_setup.setup_django() before importing
+# anything from the Django apps, so their ORM imports cannot sit at the top of
+# the file. Test modules are fine: conftest has already run by the time they
+# are imported.
+"stages.py" = ["E402"]
+"tests/conftest.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true

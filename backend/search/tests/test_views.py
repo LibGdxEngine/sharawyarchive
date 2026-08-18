@@ -127,7 +127,7 @@ def test_search_survives_an_empty_corpus(api: APIClient, chunks_index: str) -> N
     assert body["total"] == 0
 
 
-def test_url_is_wired_next_to_the_existing_api_routes(api: APIClient) -> None:
-    """Both ``api/`` includes must keep resolving."""
-    assert api.get("/api/hello/").status_code == 200
+def test_url_is_wired_next_to_the_existing_api_routes(api: APIClient, db: None) -> None:
+    """Every ``api/`` include must keep resolving."""
+    assert api.get("/api/surahs/").status_code == 200
     assert api.get(URL).status_code == 400

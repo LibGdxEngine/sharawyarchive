@@ -22,3 +22,8 @@
 - Meili matchingStrategy must be "all": default "last" drops words until the ال prefix matches everything (verified live) — lexical precision, semantic recall.
 - HNSW confirmed in EXPLAIN under enable_seqscan=off (chunk_embedding_hnsw index scan).
 - mypy baseline: django-stubs plugin not enabled in backend/pyproject.toml (78 pre-existing errors in corpus/quran) — decide in US-016 whether to enable plugin or keep mypy advisory (Makefile already treats mypy as advisory).
+
+## Pipeline landed (US-005)
+- pipeline/ package: parsers (config regex + --dry-run), engines (stub + lazy faster-whisper/CTC), pure chunking, 7 Celery stages on 'pipeline' queue, sync driver (python -m pipeline.run), async dispatch via send_task by name (run_pipeline command). 50 tests.
+- Live e2e verified: MinIO + Meili real run; idempotent re-run 0.94s; celery worker consumed dispatched chain.
+- Fixed cross-suite test isolation: quran's session-scoped full-import fixture leaks into shared test DB; search fixtures now update_or_create and assert against DB state. Lesson: fixtures must tolerate a fully-populated Quran.

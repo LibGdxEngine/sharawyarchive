@@ -27,7 +27,6 @@ paths:
       tags:
       - ayahs
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -49,6 +48,10 @@ paths:
         own cache: the second person to share the same passage joins the first
         person's render instead of starting another. ``202`` means "queued by you",
         ``200`` means "already queued".
+
+        The one job that is *not* simply handed back is a failed one: asking for it
+        again queues one more attempt on the same row, so a transient worker or
+        storage failure is not a clip nobody can ever have.
       tags:
       - clips
       requestBody:
@@ -64,7 +67,6 @@ paths:
               $ref: '#/components/schemas/ClipCreateRequest'
         required: true
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -95,7 +97,6 @@ paths:
       tags:
       - clips
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -130,7 +131,6 @@ paths:
               $ref: '#/components/schemas/CorrectionCreateRequest'
         required: true
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -177,7 +177,6 @@ paths:
       tags:
       - search
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -197,7 +196,13 @@ paths:
   /api/segments/{id}/:
     get:
       operationId: segments_retrieve
-      description: '``GET /api/segments/{id}/`` — metadata plus presigned media URLs.'
+      description: |-
+        ``GET /api/segments/{id}/`` — metadata plus presigned media URLs.
+
+        Not immutable, despite the rest of the segment being append-only: the body
+        embeds presigned audio and waveform URLs that expire in six hours, so it is
+        ``private`` (a shared cache must not hand one reader's signed URL to
+        another) and short-lived (API_CONTRACT.md amendment 4).
       parameters:
       - in: path
         name: id
@@ -207,7 +212,6 @@ paths:
       tags:
       - segments
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -217,6 +221,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SegmentDetail'
+          description: ''
+  /api/segments/{id}/chunks/:
+    get:
+      operationId: segment_chunks_list
+      description: |-
+        ``GET /api/segments/{id}/chunks/`` — passage spans and their word ranges.
+
+        The client already has the word array from ``/transcript/``; this says
+        which passage each word belongs to, which is what a correction has to name
+        when it is submitted. Content-addressed like the transcript itself: the
+        spans only move when an approved correction bumps ``Transcript.version``.
+
+        Assembled from two ``values_list`` queries rather than through the
+        serializer, for the reason ``SegmentTranscriptView`` gives — the payload is
+        mechanical and a transcript can carry thousands of words.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - segments
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChunkSpan'
           description: ''
   /api/segments/{id}/related/:
     get:
@@ -238,7 +277,6 @@ paths:
       tags:
       - segments
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -268,7 +306,6 @@ paths:
       tags:
       - segments
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -286,7 +323,6 @@ paths:
       tags:
       - surahs
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -317,7 +353,6 @@ paths:
       tags:
       - surahs
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -328,83 +363,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/SurahDetail'
           description: ''
-  /api/token/:
-    post:
-      operationId: token_create
-      description: |-
-        Takes a set of user credentials and returns an access and refresh JSON web
-        token pair to prove the authentication of those credentials.
-      tags:
-      - token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TokenObtainPairRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/TokenObtainPairRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/TokenObtainPairRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TokenObtainPair'
-          description: ''
-  /api/token/refresh/:
-    post:
-      operationId: token_refresh_create
-      description: |-
-        Takes a refresh type JSON web token and returns an access type JSON web
-        token if the refresh token is valid.
-      tags:
-      - token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TokenRefreshRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/TokenRefreshRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/TokenRefreshRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TokenRefresh'
-          description: ''
-  /api/token/verify/:
-    post:
-      operationId: token_verify_create
-      description: |-
-        Takes a token and indicates if it is valid.  This view provides no
-        information about a token's fitness for a particular use.
-      tags:
-      - token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TokenVerifyRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/TokenVerifyRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/TokenVerifyRequest'
-        required: true
-      responses:
-        '200':
-          description: No response body
   /api/topics/:
     get:
       operationId: topics_list
@@ -412,11 +370,13 @@ paths:
         ``GET /api/topics/`` — the published topics only.
 
         An unpublished topic is an unreviewed cluster label, so it is invisible
-        rather than merely unlinked: nothing about it leaves the backend.
+        rather than merely unlinked: nothing about it leaves the backend. Which is
+        also why this is not immutable: publishing is an editorial decision, and an
+        immutable response would mean unpublishing never reaches anyone who already
+        looked (API_CONTRACT.md amendment 4).
       tags:
       - topics
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -432,8 +392,11 @@ paths:
   /api/topics/{slug}/:
     get:
       operationId: topic_retrieve
-      description: '``GET /api/topics/{slug}/`` — the topic and its passages, best
-        first.'
+      description: |-
+        ``GET /api/topics/{slug}/`` — the topic and its best passages.
+
+        Cached like the list for the same reason: the publish gate has to be able
+        to close again.
       parameters:
       - in: path
         name: slug
@@ -443,7 +406,6 @@ paths:
       tags:
       - topics
       security:
-      - jwtAuth: []
       - cookieAuth: []
       - basicAuth: []
       - {}
@@ -465,23 +427,20 @@ components:
           type: integer
         number:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
         text_uthmani:
           type: string
         text_imlaei:
           type: string
         juz:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
         page:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           description: Madani mushaf page, 1-604.
         segments:
           type: array
@@ -534,6 +493,28 @@ components:
       - page
       - page_size
       - results
+    AyahSegmentRef:
+      type: object
+      description: |-
+        A covering segment as listed on a surah page — just enough to link to it.
+
+        Serialized from the ``.values()`` dicts the view fans out, not from model
+        instances, so the whole page costs one segment query.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/KindEnum'
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+      required:
+      - id
+      - kind
+      - title
     ChunkResult:
       type: object
       description: |-
@@ -575,6 +556,36 @@ components:
       - start_ms
       - surah
       - text
+    ChunkSpan:
+      type: object
+      description: |-
+        One row of ``GET /api/segments/{id}/chunks/``.
+
+        The map from a word to the passage that holds it: the correction UI lets a
+        reader select words in the transcript and has to name a ``chunk_id`` when
+        it posts, so it needs the chunks' word ranges. ``word_start``/``word_end``
+        are inclusive ``TranscriptWord.idx`` values — the same transcript-wide
+        indices ``POST /api/corrections/`` takes — and are null only for a chunk
+        whose span holds no aligned words.
+      properties:
+        chunk_id:
+          type: integer
+        start_ms:
+          type: integer
+        end_ms:
+          type: integer
+        word_start:
+          type: integer
+          nullable: true
+        word_end:
+          type: integer
+          nullable: true
+      required:
+      - chunk_id
+      - end_ms
+      - start_ms
+      - word_end
+      - word_start
     ClipCreateRequest:
       type: object
       description: |-
@@ -649,19 +660,23 @@ components:
       description: |-
         ``POST /api/corrections/``. Word offsets index ``TranscriptWord.idx``;
         a one-word fix has ``word_start == word_end``.
+
+        The range is checked against the named chunk's own words here, not only at
+        approval time. :func:`corpus.corrections.approve` refuses a range that
+        reaches outside its chunk, so accepting one at submission would queue a
+        suggestion that no reviewer can ever act on: a dead letter that costs the
+        submitter their rate limit and the reviewer a decision they cannot make.
       properties:
         chunk_id:
           type: integer
         word_start:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 2147483647
           minimum: 0
-          format: int64
         word_end:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 2147483647
           minimum: 0
-          format: int64
         suggested_text:
           type: string
           minLength: 1
@@ -707,15 +722,13 @@ components:
           maxLength: 255
         ayah_start:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           nullable: true
         ayah_end:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           nullable: true
         duration_ms:
           type: integer
@@ -816,15 +829,13 @@ components:
           nullable: true
         ayah_start:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           nullable: true
         ayah_end:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           nullable: true
         duration_ms:
           type: integer
@@ -833,9 +844,8 @@ components:
           format: int64
         ordinal:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 2147483647
           minimum: 0
-          format: int64
         audio_url:
           type: string
           format: uri
@@ -880,36 +890,43 @@ components:
       - title
     SurahAyah:
       type: object
-      description: One ayah inside a paginated surah page.
+      description: |-
+        One ayah inside a paginated surah page.
+
+        ``segments`` is capped at ``views.MAX_AYAH_SEGMENTS``; ``segment_count`` is
+        the uncapped total.
       properties:
         number:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
         text_uthmani:
           type: string
         juz:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
         page:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           description: Madani mushaf page, 1-604.
         sajda:
           type: boolean
         segment_count:
           type: integer
           readOnly: true
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AyahSegmentRef'
+          readOnly: true
       required:
       - juz
       - number
       - page
       - segment_count
+      - segments
       - text_uthmani
     SurahDetail:
       type: object
@@ -940,9 +957,8 @@ components:
       properties:
         number:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
         name_ar:
           type: string
           maxLength: 100
@@ -955,9 +971,8 @@ components:
           maxLength: 100
         ayah_count:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
         revelation_place:
           $ref: '#/components/schemas/RevelationPlaceEnum'
         segment_count:
@@ -971,60 +986,6 @@ components:
       - number
       - revelation_place
       - segment_count
-    TokenObtainPair:
-      type: object
-      properties:
-        access:
-          type: string
-          readOnly: true
-        refresh:
-          type: string
-          readOnly: true
-      required:
-      - access
-      - refresh
-    TokenObtainPairRequest:
-      type: object
-      properties:
-        username:
-          type: string
-          writeOnly: true
-          minLength: 1
-        password:
-          type: string
-          writeOnly: true
-          minLength: 1
-      required:
-      - password
-      - username
-    TokenRefresh:
-      type: object
-      properties:
-        access:
-          type: string
-          readOnly: true
-        refresh:
-          type: string
-      required:
-      - access
-      - refresh
-    TokenRefreshRequest:
-      type: object
-      properties:
-        refresh:
-          type: string
-          minLength: 1
-      required:
-      - refresh
-    TokenVerifyRequest:
-      type: object
-      properties:
-        token:
-          type: string
-          writeOnly: true
-          minLength: 1
-      required:
-      - token
     TopicDetail:
       type: object
       description: |-
@@ -1127,7 +1088,3 @@ components:
       type: apiKey
       in: cookie
       name: sessionid
-    jwtAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT

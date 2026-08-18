@@ -41,6 +41,10 @@ export interface paths {
          *     own cache: the second person to share the same passage joins the first
          *     person's render instead of starting another. ``202`` means "queued by you",
          *     ``200`` means "already queued".
+         *
+         *     The one job that is *not* simply handed back is a failed one: asking for it
+         *     again queues one more attempt on the same row, so a transient worker or
+         *     storage failure is not a clip nobody can ever have.
          */
         post: operations["clip_create"];
         delete?: never;
@@ -117,8 +121,43 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description ``GET /api/segments/{id}/`` — metadata plus presigned media URLs. */
+        /**
+         * @description ``GET /api/segments/{id}/`` — metadata plus presigned media URLs.
+         *
+         *     Not immutable, despite the rest of the segment being append-only: the body
+         *     embeds presigned audio and waveform URLs that expire in six hours, so it is
+         *     ``private`` (a shared cache must not hand one reader's signed URL to
+         *     another) and short-lived (API_CONTRACT.md amendment 4).
+         */
         get: operations["segments_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/segments/{id}/chunks/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ``GET /api/segments/{id}/chunks/`` — passage spans and their word ranges.
+         *
+         *     The client already has the word array from ``/transcript/``; this says
+         *     which passage each word belongs to, which is what a correction has to name
+         *     when it is submitted. Content-addressed like the transcript itself: the
+         *     spans only move when an approved correction bumps ``Transcript.version``.
+         *
+         *     Assembled from two ``values_list`` queries rather than through the
+         *     serializer, for the reason ``SegmentTranscriptView`` gives — the payload is
+         *     mechanical and a transcript can carry thousands of words.
+         */
+        get: operations["segment_chunks_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -208,66 +247,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/token/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description Takes a set of user credentials and returns an access and refresh JSON web
-         *     token pair to prove the authentication of those credentials.
-         */
-        post: operations["token_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/token/refresh/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description Takes a refresh type JSON web token and returns an access type JSON web
-         *     token if the refresh token is valid.
-         */
-        post: operations["token_refresh_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/token/verify/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description Takes a token and indicates if it is valid.  This view provides no
-         *     information about a token's fitness for a particular use.
-         */
-        post: operations["token_verify_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/topics/": {
         parameters: {
             query?: never;
@@ -279,7 +258,10 @@ export interface paths {
          * @description ``GET /api/topics/`` — the published topics only.
          *
          *     An unpublished topic is an unreviewed cluster label, so it is invisible
-         *     rather than merely unlinked: nothing about it leaves the backend.
+         *     rather than merely unlinked: nothing about it leaves the backend. Which is
+         *     also why this is not immutable: publishing is an editorial decision, and an
+         *     immutable response would mean unpublishing never reaches anyone who already
+         *     looked (API_CONTRACT.md amendment 4).
          */
         get: operations["topics_list"];
         put?: never;
@@ -297,7 +279,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description ``GET /api/topics/{slug}/`` — the topic and its passages, best first. */
+        /**
+         * @description ``GET /api/topics/{slug}/`` — the topic and its best passages.
+         *
+         *     Cached like the list for the same reason: the publish gate has to be able
+         *     to close again.
+         */
         get: operations["topic_retrieve"];
         put?: never;
         post?: never;
@@ -314,16 +301,11 @@ export interface components {
         /** @description ``GET /api/ayahs/{surah}/{ayah}/`` — the verse and what covers it. */
         AyahDetail: {
             surah: number;
-            /** Format: int64 */
             number: number;
             text_uthmani: string;
             text_imlaei: string;
-            /** Format: int64 */
             juz: number;
-            /**
-             * Format: int64
-             * @description Madani mushaf page, 1-604.
-             */
+            /** @description Madani mushaf page, 1-604. */
             page: number;
             readonly segments: components["schemas"]["CoveringSegment"][];
         };
@@ -342,6 +324,17 @@ export interface components {
             results: components["schemas"]["SurahAyah"][];
         };
         /**
+         * @description A covering segment as listed on a surah page — just enough to link to it.
+         *
+         *     Serialized from the ``.values()`` dicts the view fans out, not from model
+         *     instances, so the whole page costs one segment query.
+         */
+        AyahSegmentRef: {
+            readonly id: number;
+            readonly kind: components["schemas"]["KindEnum"];
+            readonly title: string;
+        };
+        /**
          * @description The search-result shape, reused wherever chunks are surfaced (topics,
          *     related passages) so one renderer on the frontend handles all of them.
          *     Mirrors :class:`search.services.SearchResult`.
@@ -357,6 +350,23 @@ export interface components {
             text: string;
             start_ms: number;
             end_ms: number;
+        };
+        /**
+         * @description One row of ``GET /api/segments/{id}/chunks/``.
+         *
+         *     The map from a word to the passage that holds it: the correction UI lets a
+         *     reader select words in the transcript and has to name a ``chunk_id`` when
+         *     it posts, so it needs the chunks' word ranges. ``word_start``/``word_end``
+         *     are inclusive ``TranscriptWord.idx`` values — the same transcript-wide
+         *     indices ``POST /api/corrections/`` takes — and are null only for a chunk
+         *     whose span holds no aligned words.
+         */
+        ChunkSpan: {
+            chunk_id: number;
+            start_ms: number;
+            end_ms: number;
+            word_start: number | null;
+            word_end: number | null;
         };
         /**
          * @description ``POST /api/clips/``. Rendering is somebody's CPU, so the range is
@@ -398,12 +408,16 @@ export interface components {
         /**
          * @description ``POST /api/corrections/``. Word offsets index ``TranscriptWord.idx``;
          *     a one-word fix has ``word_start == word_end``.
+         *
+         *     The range is checked against the named chunk's own words here, not only at
+         *     approval time. :func:`corpus.corrections.approve` refuses a range that
+         *     reaches outside its chunk, so accepting one at submission would queue a
+         *     suggestion that no reviewer can ever act on: a dead letter that costs the
+         *     submitter their rate limit and the reviewer a decision they cannot make.
          */
         CorrectionCreateRequest: {
             chunk_id: number;
-            /** Format: int64 */
             word_start: number;
-            /** Format: int64 */
             word_end: number;
             suggested_text: string;
         };
@@ -424,9 +438,7 @@ export interface components {
             readonly id: number;
             kind: components["schemas"]["KindEnum"];
             title?: string;
-            /** Format: int64 */
             ayah_start?: number | null;
-            /** Format: int64 */
             ayah_end?: number | null;
             /** Format: int64 */
             duration_ms: number;
@@ -479,13 +491,10 @@ export interface components {
             kind: components["schemas"]["KindEnum"];
             title?: string;
             surah: number | null;
-            /** Format: int64 */
             ayah_start?: number | null;
-            /** Format: int64 */
             ayah_end?: number | null;
             /** Format: int64 */
             duration_ms: number;
-            /** Format: int64 */
             ordinal?: number;
             /** Format: uri */
             readonly audio_url: string;
@@ -500,20 +509,21 @@ export interface components {
             title: string;
             kind: string;
         };
-        /** @description One ayah inside a paginated surah page. */
+        /**
+         * @description One ayah inside a paginated surah page.
+         *
+         *     ``segments`` is capped at ``views.MAX_AYAH_SEGMENTS``; ``segment_count`` is
+         *     the uncapped total.
+         */
         SurahAyah: {
-            /** Format: int64 */
             number: number;
             text_uthmani: string;
-            /** Format: int64 */
             juz: number;
-            /**
-             * Format: int64
-             * @description Madani mushaf page, 1-604.
-             */
+            /** @description Madani mushaf page, 1-604. */
             page: number;
             sajda?: boolean;
             readonly segment_count: number;
+            readonly segments: components["schemas"]["AyahSegmentRef"][];
         };
         /** @description ``GET /api/surahs/{n}/`` — surah head plus one page of its ayahs. */
         SurahDetail: {
@@ -526,34 +536,14 @@ export interface components {
         };
         /** @description One row of ``GET /api/surahs/``. */
         SurahList: {
-            /** Format: int64 */
             number: number;
             name_ar: string;
             /** @description name_ar passed through corpus.arabic.normalize_for_index. */
             name_ar_plain: string;
             name_en: string;
-            /** Format: int64 */
             ayah_count: number;
             revelation_place: components["schemas"]["RevelationPlaceEnum"];
             readonly segment_count: number;
-        };
-        TokenObtainPair: {
-            readonly access: string;
-            readonly refresh: string;
-        };
-        TokenObtainPairRequest: {
-            username: string;
-            password: string;
-        };
-        TokenRefresh: {
-            readonly access: string;
-            refresh: string;
-        };
-        TokenRefreshRequest: {
-            refresh: string;
-        };
-        TokenVerifyRequest: {
-            token: string;
         };
         /**
          * @description ``GET /api/topics/{slug}/``. The view attaches ``chunks`` — the topic's
@@ -759,6 +749,27 @@ export interface operations {
             };
         };
     };
+    segment_chunks_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkSpan"][];
+                };
+            };
+        };
+    };
     segment_related_list: {
         parameters: {
             query?: never;
@@ -841,80 +852,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SurahDetail"];
                 };
-            };
-        };
-    };
-    token_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TokenObtainPairRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["TokenObtainPairRequest"];
-                "multipart/form-data": components["schemas"]["TokenObtainPairRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenObtainPair"];
-                };
-            };
-        };
-    };
-    token_refresh_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TokenRefreshRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["TokenRefreshRequest"];
-                "multipart/form-data": components["schemas"]["TokenRefreshRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenRefresh"];
-                };
-            };
-        };
-    };
-    token_verify_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TokenVerifyRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["TokenVerifyRequest"];
-                "multipart/form-data": components["schemas"]["TokenVerifyRequest"];
-            };
-        };
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

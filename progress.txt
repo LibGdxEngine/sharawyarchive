@@ -56,3 +56,11 @@ ayahs=6236
 $ psql -d restore_check: topics=2, words=187, clips table present
 ```
 (Earlier same-session verified run: commit be8ff8a. This run includes the corpus 0002/clips tables.)
+
+### Fix round complete — all 12 blocking findings addressed
+- B1: hnsw_scan (ef_search clamp 40-1000 + iterative_scan relaxed_order, savepoint fallback); real 5000-chunk repro returned 0/10 rows pre-fix; both test orders green x3. B11: EXPLAIN test un-rigged at 5000 rows, natural plan uses chunk_embedding_hnsw.
+- B2: pending-seek applied on loadedmetadata; FakeAudio mimics the src-reset so the old bug fails the suite; ?t= autoplays. B4: marker inside ChunkResultList + Quran matches labelled. B9: offline e2e (client-side fetch through SW, cached audio object URLs, /offline precached).
+- B3: prod refuses stub engines (ImproperlyConfigured) unless ALLOW_STUB_ENGINES=true; compose/env/DEPLOY.md wire real engines. B5: segment private/max-age=300, topics public/max-age=300.
+- B6/B8: documented above. B7: Caddy routes sitemaps to Django; SITE_BASE_URL wired; per-ayah metadata + canonical + anchors; surah fan-out replaced by inlined segments (1 query). B10/B12: honest pipeline failure test, run_pipeline tests, related rail in player UI, storage-key test made real, clips contract descoped in prd.
+- Should-fixes: Redis throttle cache + NUM_PROXIES + client_ip, search page cap 100, JSON log timestamps, corrections POST range validation, --rebuild preserves published topics, clip retry race, admin play range #t=s,e, CLIP_ATTRIBUTION from env, JWT/demo cruft + db.sqlite3 removed, models.ts nullable drift fixed, keyboard survives word clicks, font fallback metrics, topic chunk cap.
+- Final regression: backend 696 (fresh DB, twice), pipeline 55, frontend 109 + build, make lint green. Live smoke: search 9 results, segment cache private/300, page=500000 -> 400, sitemap index serves.

@@ -36,3 +36,23 @@
 - Integration e2e proven: synthesized audio → pipeline (stub ASR) → search API returns the chunk with start_ms; hamza-misspelled query matches; re-run fully skipped. 668+50+80 tests green.
 - Host disk at 97% (5.4G free) — pip cache purged by clips agent; watch before large builds.
 - mypy advisory: django-stubs plugin not enabled (pre-existing); ruff/eslint/tsc are the enforced linters.
+
+## Architect rejection — fix round (2026-08-18)
+Reviewer rejected with 12 blocking findings; fixes in flight via 4 agents (search/pgvector+caching, player-seek+offline+markers, pipeline failure honesty, SEO+prod env). Orchestrator-verified items:
+
+### B6 resolved — integration DB migrated and US-011/012 exercised live over HTTP
+- `manage.py migrate` applied corpus.0002 + clips.0001 to the dev DB (they were missing — topics/corrections 500'd there).
+- Live correction flow: POST /api/corrections/ → 201; corrections.approve() replaced word idx5 "القلوب"→"الفرج", Transcript.version 1→2, is_human_reviewed=True.
+- Live topics: ingested 8 clustered synthetic segments; build_topics created 2 unpublished auto- topics (labels "العلم", "الله"), 9 ChunkTopics; after publishing one, /api/topics/ lists only it; /api/topics/auto-alalm/ and /api/segments/2/related/ (8 neighbors, self excluded) both 200.
+
+### B8 resolved — restore verified run (documented)
+```
+$ docker compose exec -T db pg_dump -U postgres -d postgres --format=custom --no-owner > verify-backup.dump
+$ bash scripts/restore.sh verify-backup.dump restore_check docker-compose.yml
+[restore] sanity
+surahs=114
+ayahs=6236
+[restore] done -> restore_check
+$ psql -d restore_check: topics=2, words=187, clips table present
+```
+(Earlier same-session verified run: commit be8ff8a. This run includes the corpus 0002/clips tables.)

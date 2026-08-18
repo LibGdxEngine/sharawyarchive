@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import ErrorNote from "@/components/ErrorNote";
 import SiteHeader from "@/components/SiteHeader";
-import Player from "@/components/player/Player";
-import { getSegment, getTranscript } from "@/lib/api";
+import { getSegment } from "@/lib/api";
 import { kindLabel } from "@/lib/format";
 import { SITE_NAME } from "@/lib/site";
-import type { Segment, Transcript } from "@/types/models";
+import type { Segment } from "@/types/models";
+import ListenClient from "./ListenClient";
 
-// Segment metadata carries a presigned, expiring audio URL and the transcript
-// is fetched per request, so this route is never prerendered.
+// generateMetadata reads a presigned, expiring audio URL, so this route is
+// never prerendered. The page body itself no longer fetches: the segment and
+// its transcript are loaded in the browser (see ListenClient) so that the
+// service worker caches them and a saved segment still opens offline.
 export const dynamic = "force-dynamic";
 
 interface ListenPageProps {
@@ -87,27 +88,11 @@ export default async function ListenPage({
 
   const startMs = parseStartMs((await searchParams).t);
 
-  let segment: Segment;
-  let transcript: Transcript;
-  try {
-    segment = await getSegment(id);
-    transcript = await getTranscript(id, segment.transcript_version);
-  } catch {
-    return (
-      <>
-        <SiteHeader />
-        <main className="reading-column page-shell">
-          <ErrorNote>تعذّر تحميل هذا المقطع الآن. حاول مرة أخرى بعد قليل.</ErrorNote>
-        </main>
-      </>
-    );
-  }
-
   return (
     <>
       <SiteHeader />
       <main>
-        <Player segment={segment} transcript={transcript} startMs={startMs} />
+        <ListenClient segmentId={id} startMs={startMs} />
       </main>
     </>
   );

@@ -13,22 +13,16 @@ import {
   saveSegmentOffline,
   removeSegmentOffline,
 } from "@/lib/offline";
+import type { Segment } from "@/types/models";
 
 interface OfflineButtonProps {
-  segmentId: number;
-  title: string;
-  audioUrl: string;
-  waveformUrl: string;
+  segment: Segment;
 }
 
 type ButtonState = "idle" | "saving" | "saved" | "removing";
 
-export default function OfflineButton({
-  segmentId,
-  title,
-  audioUrl,
-  waveformUrl,
-}: OfflineButtonProps) {
+export default function OfflineButton({ segment }: OfflineButtonProps) {
+  const segmentId = segment.id;
   // Lazy initializer: reads localStorage synchronously — no effect needed.
   // The parent (Player) must pass key={segmentId} so this component remounts
   // when the segment changes, re-running the initializer.
@@ -41,16 +35,14 @@ export default function OfflineButton({
     setState("saving");
     setProgress(0);
     try {
-      await saveSegmentOffline(
-        segmentId,
-        { title, audio_url: audioUrl, waveform_url: waveformUrl },
-        (fraction) => setProgress(Math.round(fraction * 100))
+      await saveSegmentOffline(segment, (fraction) =>
+        setProgress(Math.round(fraction * 100))
       );
       setState("saved");
     } catch {
       setState("idle");
     }
-  }, [segmentId, title, audioUrl, waveformUrl]);
+  }, [segment]);
 
   const handleRemove = useCallback(async () => {
     setState("removing");

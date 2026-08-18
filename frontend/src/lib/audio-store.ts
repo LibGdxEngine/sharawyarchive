@@ -7,6 +7,8 @@
  * - Converts to/from seconds only at the element boundary.
  * - No Audio() construction at module scope (SSR safety).
  * - Per-segment position persisted to localStorage key `pos:<segmentId>`.
+ * - A start position is applied on `loadedmetadata`, never next to the `src`
+ *   assignment: the load algorithm the assignment starts resets currentTime.
  */
 
 import { create } from "zustand";
@@ -16,6 +18,13 @@ import { create } from "zustand";
 // ---------------------------------------------------------------------------
 
 export type PlaybackRate = 0.75 | 1 | 1.25 | 1.5;
+
+/**
+ * `HTMLMediaElement.HAVE_METADATA` — duration and dimensions are known, so the
+ * element accepts a seek that will stick. Spelled out rather than read off the
+ * constructor because the store must not touch DOM globals at module scope.
+ */
+const HAVE_METADATA = 1;
 
 export interface Track {
   segmentId: number;
@@ -35,6 +44,13 @@ interface AudioState {
   // Internal — not surfaced to consumers
   _el: HTMLAudioElement | null;
   _persistInterval: ReturnType<typeof setInterval> | null;
+  /**
+   * Position waiting for the element to report metadata, or null when nothing
+   * is pending. Assigning `src` restarts the load algorithm, which resets
+   * `currentTime` to 0 — so a start position asked for before the resource is
+   * ready has to be re-applied on `loadedmetadata`.
+   */
+  _pendingSeekMs: number | null;
 }
 
 interface AudioActions {
@@ -70,6 +86,12 @@ function savePositionMs(segmentId: number, ms: number): void {
   localStorage.setItem(STORAGE_KEY(segmentId), String(Math.floor(ms)));
 }
 
+/** Frees an offline blob source once the element has stopped pointing at it. */
+function revokeIfObjectUrl(url: string): void {
+  if (typeof URL === "undefined" || !url.startsWith("blob:")) return;
+  URL.revokeObjectURL(url);
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -85,6 +107,7 @@ export const useAudioStore = create<FullState>()((set, get) => ({
   sleepTimerHandle: null,
   _el: null,
   _persistInterval: null,
+  _pendingSeekMs: null,
 
   // ---------------------------------------------------------------------------
   // bindAudio — called once from GlobalAudio
@@ -120,11 +143,21 @@ export const useAudioStore = create<FullState>()((set, get) => ({
       if (current) savePositionMs(current.segmentId, 0);
       set({ isPlaying: false, positionMs: 0 });
     };
+    // The one place a start position can actually be applied: before this
+    // fires, the element has no duration and any `currentTime` write is
+    // discarded by the resource-load algorithm.
+    const onLoadedMetadata = () => {
+      const { _el: audioEl, _pendingSeekMs } = get();
+      if (!audioEl || _pendingSeekMs === null) return;
+      audioEl.currentTime = _pendingSeekMs / 1000;
+      set({ _pendingSeekMs: null, positionMs: Math.floor(_pendingSeekMs) });
+    };
 
     el.addEventListener("play", onPlay);
     el.addEventListener("pause", onPause);
     el.addEventListener("timeupdate", onTimeUpdate);
     el.addEventListener("ended", onEnded);
+    el.addEventListener("loadedmetadata", onLoadedMetadata);
 
     // Persist position every 5 seconds while playing
     const persistInterval = setInterval(() => {
@@ -177,14 +210,30 @@ export const useAudioStore = create<FullState>()((set, get) => ({
       sleepTimerHandle: null,
     });
 
+    // An offline track is played from an object URL owned by whoever built the
+    // track; the store is the only place that knows when it stops being used.
+    if (current && current.audioUrl !== track.audioUrl) {
+      revokeIfObjectUrl(current.audioUrl);
+    }
+
     if (_el) {
-      _el.src = track.audioUrl;
-      _el.currentTime = startMs / 1000;
-      _el.load();
+      if (_el.src === track.audioUrl && _el.readyState >= HAVE_METADATA) {
+        // Same resource, already loaded: nothing resets, so seek right away.
+        _el.currentTime = startMs / 1000;
+        set({ _pendingSeekMs: null });
+      } else {
+        // Assigning `src` is itself the load trigger (an explicit load() only
+        // restarts the same algorithm) and it zeroes currentTime, so the start
+        // position is parked until `loadedmetadata`.
+        set({ _pendingSeekMs: startMs });
+        _el.src = track.audioUrl;
+      }
 
       if (options.autoplay !== false) {
         _el.play().catch(() => {
-          // Autoplay blocked — ignore, user must tap play
+          // Autoplay policy refused the gesture — the transport stays in its
+          // paused state and the listener taps play.
+          set({ isPlaying: false });
         });
       }
 
@@ -229,10 +278,13 @@ export const useAudioStore = create<FullState>()((set, get) => ({
   // Seeking
   // ---------------------------------------------------------------------------
   seekMs(ms: number) {
-    const { _el, current } = get();
+    const { _el, current, _pendingSeekMs } = get();
     if (!_el || !current) return;
     const clamped = Math.max(0, Math.min(ms, current.durationMs));
     _el.currentTime = clamped / 1000;
+    // A seek issued while the resource is still loading must also replace the
+    // parked position, or `loadedmetadata` would drag playback back.
+    if (_pendingSeekMs !== null) set({ _pendingSeekMs: clamped });
     set({ positionMs: Math.floor(clamped) });
   },
 

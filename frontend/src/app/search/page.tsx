@@ -58,10 +58,15 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           {response.total} نتيجة
         </p>
 
+        {/*
+          Two kinds of text share this page and they must never read as one
+          list: the block below is the mushaf, the block after it is what the
+          recogniser heard. Hence the rule between them and the label on each.
+        */}
         {response.ayah_matches.length > 0 ? (
-          <section className="mt-8">
+          <section className="mt-8 border-b border-[var(--color-border)] pb-8">
             <h2 className="text-xs text-[var(--color-ink-muted)]">
-              آيات مطابقة
+              آيات مطابقة — من القرآن الكريم
             </h2>
             <ul className="mt-2 divide-y divide-[var(--color-border-subtle)]">
               {response.ayah_matches.map((ayah) => (

@@ -228,6 +228,9 @@ export default function TranscriptView({
                       {position > 0 ? " " : null}
                       <button
                         type="button"
+                        // Tells the app-wide transport that this button does
+                        // not own Space or the arrows (see lib/keyboard-target).
+                        data-transcript-word=""
                         onClick={() => onWordClick(word)}
                         aria-current={
                           word.i === activeWordIndex ? "true" : undefined

@@ -1,13 +1,20 @@
 /**
  * offline.ts — Save-for-offline per segment
  *
- * Stores audio, waveform, and transcript for a segment in Cache Storage
- * ("offline-segments" cache) under stable synthetic keys, and maintains an
- * index in localStorage ("offline:index") with lightweight metadata.
+ * Stores the segment metadata, audio, waveform, and transcript for a segment in
+ * Cache Storage ("offline-segments" cache) under stable synthetic keys, and
+ * maintains an index in localStorage ("offline:index") with lightweight
+ * metadata.
+ *
+ * Everything saved here is read back through this module: the readers below are
+ * what /listen and /saved fall back to when the network is gone, so a key only
+ * ever appears in one place — next to the writer that produced it.
  *
  * All public timestamps are integer milliseconds (consistent with the rest
  * of the codebase).
  */
+
+import type { Segment, Transcript } from "@/types/models";
 
 const CACHE_NAME = "offline-segments";
 const INDEX_KEY = "offline:index";
@@ -29,6 +36,9 @@ export interface OfflineIndexEntry {
 // Synthetic cache keys
 // ---------------------------------------------------------------------------
 
+function segmentKey(segmentId: number): string {
+  return `/offline/segment/${segmentId}/meta`;
+}
 function audioKey(segmentId: number): string {
   return `/offline/segment/${segmentId}/audio`;
 }
@@ -79,7 +89,9 @@ export function isSegmentOffline(segmentId: number): boolean {
 
 /**
  * Returns a Blob URL for the offline audio of a segment, or null if not saved.
- * The caller is responsible for revoking the object URL when done.
+ *
+ * The audio store owns the returned URL from the moment it goes into a track:
+ * it revokes it when that track is replaced.
  */
 export async function getOfflineAudioUrl(
   segmentId: number
@@ -94,6 +106,35 @@ export async function getOfflineAudioUrl(
   } catch {
     return null;
   }
+}
+
+/** Reads a saved JSON body back out of the offline cache, or null. */
+async function readOfflineJson<T>(key: string): Promise<T | null> {
+  if (typeof window === "undefined" || !("caches" in window)) return null;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    const response = await cache.match(key);
+    if (!response) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The segment metadata saved alongside the audio, or null when the segment was
+ * never saved. Its `audio_url` is a presigned URL that has almost certainly
+ * expired — play saved segments through `getOfflineAudioUrl`, not through this.
+ */
+export function getOfflineSegment(segmentId: number): Promise<Segment | null> {
+  return readOfflineJson<Segment>(segmentKey(segmentId));
+}
+
+/** The transcript saved with a segment, or null when it was never saved. */
+export function getOfflineTranscript(
+  segmentId: number
+): Promise<Transcript | null> {
+  return readOfflineJson<Transcript>(transcriptKey(segmentId));
 }
 
 /**
@@ -120,27 +161,25 @@ export async function getOfflineUsageBytes(): Promise<number> {
 
 /**
  * Save a segment for offline playback.
- * Fetches audio_url, waveform_url, and transcript, caches them all, then
- * records a summary entry in the localStorage index.
+ * Caches the segment metadata, audio, waveform, and transcript, then records a
+ * summary entry in the localStorage index.
  *
- * @param segmentId  Numeric segment ID.
- * @param meta       Pre-fetched segment metadata (avoids re-fetching from the
- *                   network; the /listen page already has this).
+ * The metadata is saved too, not just the media: with the network gone, the
+ * duration and title it carries are the only way /listen and /saved can build a
+ * playable track.
+ *
+ * @param segment    Segment metadata already fetched by the caller.
  * @param onProgress Called with a fraction [0, 1] as each resource is saved.
  */
 export async function saveSegmentOffline(
-  segmentId: number,
-  meta: {
-    title: string;
-    audio_url: string;
-    waveform_url: string;
-  },
+  segment: Segment,
   onProgress?: (fraction: number) => void
 ): Promise<void> {
   if (!("caches" in window)) {
     throw new Error("Cache Storage not available");
   }
 
+  const segmentId = segment.id;
   const cache = await caches.open(CACHE_NAME);
   const apiBase =
     (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api").replace(
@@ -152,7 +191,7 @@ export async function saveSegmentOffline(
   onProgress?.(0);
 
   // ---- 1. Audio (largest resource, count first)
-  const audioResponse = await fetch(meta.audio_url);
+  const audioResponse = await fetch(segment.audio_url);
   if (!audioResponse.ok) throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
   const audioBlob = await audioResponse.blob();
   totalBytes += audioBlob.size;
@@ -165,7 +204,7 @@ export async function saveSegmentOffline(
   onProgress?.(0.6);
 
   // ---- 2. Waveform JSON
-  const waveformResponse = await fetch(meta.waveform_url);
+  const waveformResponse = await fetch(segment.waveform_url);
   if (!waveformResponse.ok)
     throw new Error(`Failed to fetch waveform: ${waveformResponse.status}`);
   const waveformBlob = await waveformResponse.blob();
@@ -179,7 +218,7 @@ export async function saveSegmentOffline(
   onProgress?.(0.8);
 
   // ---- 3. Transcript JSON
-  const transcriptUrl = `${apiBase}/segments/${segmentId}/transcript/`;
+  const transcriptUrl = `${apiBase}/segments/${segmentId}/transcript/?v=${segment.transcript_version}`;
   const transcriptResponse = await fetch(transcriptUrl);
   if (!transcriptResponse.ok)
     throw new Error(`Failed to fetch transcript: ${transcriptResponse.status}`);
@@ -191,15 +230,26 @@ export async function saveSegmentOffline(
       headers: { "Content-Type": "application/json" },
     })
   );
+  onProgress?.(0.9);
+
+  // ---- 4. Segment metadata JSON (title, duration, ayah range)
+  const segmentBody = JSON.stringify(segment);
+  totalBytes += segmentBody.length;
+  await cache.put(
+    segmentKey(segmentId),
+    new Response(segmentBody, {
+      headers: { "Content-Type": "application/json" },
+    })
+  );
   onProgress?.(0.95);
 
-  // ---- 4. Update index
+  // ---- 5. Update index
   const existing = readIndex().filter((e) => e.segmentId !== segmentId);
   writeIndex([
     ...existing,
     {
       segmentId,
-      title: meta.title,
+      title: segment.title,
       bytes: totalBytes,
       savedAt: Date.now(),
     },
@@ -214,6 +264,7 @@ export async function removeSegmentOffline(segmentId: number): Promise<void> {
   if (!("caches" in window)) return;
   const cache = await caches.open(CACHE_NAME);
   await Promise.all([
+    cache.delete(segmentKey(segmentId)),
     cache.delete(audioKey(segmentId)),
     cache.delete(waveformKey(segmentId)),
     cache.delete(transcriptKey(segmentId)),

@@ -2,22 +2,9 @@
 
 import { useEffect } from "react";
 import { useAudioStore } from "@/lib/audio-store";
+import { isTypingTarget } from "@/lib/keyboard-target";
 
 const SEEK_STEP_MS = 10_000;
-
-/** Typing, or driving a control that already owns these keys. */
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  const tag = target.tagName;
-  return (
-    tag === "INPUT" ||
-    tag === "TEXTAREA" ||
-    tag === "SELECT" ||
-    tag === "BUTTON" ||
-    tag === "A"
-  );
-}
 
 /**
  * App-wide keyboard transport. Lives in the root layout so the shortcuts work
@@ -26,6 +13,10 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * ArrowRight is forward and ArrowLeft is back even though the document is RTL:
  * the arrows map to the timeline, not to the reading direction, and every
  * media player the listener already uses behaves this way.
+ *
+ * Transcript word buttons are not treated as typing targets — see
+ * `isTypingTarget`. Their keys are handled here and the default is prevented,
+ * which is also what stops Space from re-activating the focused word.
  */
 export default function KeyboardShortcuts() {
   useEffect(() => {

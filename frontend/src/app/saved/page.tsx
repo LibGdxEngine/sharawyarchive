@@ -9,9 +9,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useAudioStore } from "@/lib/audio-store";
 import {
   listOfflineSegments,
   removeSegmentOffline,
+  getOfflineAudioUrl,
+  getOfflineSegment,
   getOfflineUsageBytes,
 } from "@/lib/offline";
 import type { OfflineIndexEntry } from "@/lib/offline";
@@ -32,9 +35,12 @@ function formatDate(ms: number): string {
 }
 
 export default function SavedPage() {
+  const load = useAudioStore((s) => s.load);
   const [entries, setEntries] = useState<OfflineIndexEntry[]>([]);
   const [usageBytes, setUsageBytes] = useState(0);
   const [deleting, setDeleting] = useState<Set<number>>(new Set());
+  const [startingId, setStartingId] = useState<number | null>(null);
+  const [failedId, setFailedId] = useState<number | null>(null);
 
   // Load data from localStorage + Cache Storage.
   // setState is called inside a Promise callback, not synchronously in the effect body.
@@ -49,6 +55,39 @@ export default function SavedPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  /**
+   * Play straight from Cache Storage — no network anywhere on this path. The
+   * duration comes from the segment metadata saved with the audio; without it
+   * the transport would have nothing to scrub against, so a save that predates
+   * it reports failure rather than loading a track that cannot be seeked.
+   */
+  const handlePlay = async (segmentId: number) => {
+    setFailedId(null);
+    setStartingId(segmentId);
+    try {
+      const [audioUrl, segment] = await Promise.all([
+        getOfflineAudioUrl(segmentId),
+        getOfflineSegment(segmentId),
+      ]);
+      if (audioUrl === null || segment === null) {
+        if (audioUrl !== null) URL.revokeObjectURL(audioUrl);
+        setFailedId(segmentId);
+        return;
+      }
+      load(
+        {
+          segmentId,
+          title: segment.title,
+          audioUrl,
+          durationMs: segment.duration_ms,
+        },
+        { autoplay: true }
+      );
+    } finally {
+      setStartingId(null);
+    }
+  };
 
   const handleDelete = async (segmentId: number) => {
     setDeleting((prev) => new Set(prev).add(segmentId));
@@ -104,21 +143,42 @@ export default function SavedPage() {
                 <p className="mt-0.5 text-xs" style={{ color: "var(--color-ink-muted)" }}>
                   {formatBytes(entry.bytes)} · حُفظ {formatDate(entry.savedAt)}
                 </p>
+                {failedId === entry.segmentId ? (
+                  <p className="mt-0.5 text-xs" style={{ color: "var(--color-ink-muted)" }}>
+                    تعذّر تشغيل النسخة المحفوظة — احفظ المقطع مرة أخرى.
+                  </p>
+                ) : null}
               </div>
 
-              <button
-                onClick={() => void handleDelete(entry.segmentId)}
-                disabled={deleting.has(entry.segmentId)}
-                aria-label={`حذف ${entry.title} من المحفوظات`}
-                className="flex-shrink-0 rounded px-3 py-1.5 text-xs transition-opacity disabled:opacity-40"
-                style={{
-                  backgroundColor: "var(--color-bg-subtle)",
-                  color: "var(--color-ink-muted)",
-                  border: "1px solid var(--color-border)",
-                }}
-              >
-                {deleting.has(entry.segmentId) ? "جارٍ الحذف…" : "حذف"}
-              </button>
+              <div className="flex flex-shrink-0 items-center gap-2">
+                <button
+                  onClick={() => void handlePlay(entry.segmentId)}
+                  disabled={startingId === entry.segmentId}
+                  aria-label={`تشغيل ${entry.title}`}
+                  className="rounded px-3 py-1.5 text-xs transition-opacity disabled:opacity-40"
+                  style={{
+                    backgroundColor: "var(--color-bg-subtle)",
+                    color: "var(--color-ink-muted)",
+                    border: "1px solid var(--color-border)",
+                  }}
+                >
+                  {startingId === entry.segmentId ? "جارٍ التشغيل…" : "تشغيل"}
+                </button>
+
+                <button
+                  onClick={() => void handleDelete(entry.segmentId)}
+                  disabled={deleting.has(entry.segmentId)}
+                  aria-label={`حذف ${entry.title} من المحفوظات`}
+                  className="rounded px-3 py-1.5 text-xs transition-opacity disabled:opacity-40"
+                  style={{
+                    backgroundColor: "var(--color-bg-subtle)",
+                    color: "var(--color-ink-muted)",
+                    border: "1px solid var(--color-border)",
+                  }}
+                >
+                  {deleting.has(entry.segmentId) ? "جارٍ الحذف…" : "حذف"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

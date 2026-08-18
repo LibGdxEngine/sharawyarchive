@@ -1,10 +1,15 @@
 import localFont from "next/font/local";
 
+/*
+ * `adjustFontFallback` is left at its default so next/font emits a
+ * size-adjusted Arial fallback for each face: the swap from fallback to real
+ * font then keeps its line boxes, instead of reflowing the page under the
+ * reader.
+ */
 export const quranFont = localFont({
   src: "./AmiriQuran-Regular.ttf",
   variable: "--font-quran",
   display: "swap",
-  adjustFontFallback: false,
   fallback: ["Amiri", "serif"],
   preload: true,
 });
@@ -29,7 +34,6 @@ export const uiFont = localFont({
   ],
   variable: "--font-ui",
   display: "swap",
-  adjustFontFallback: false,
   fallback: ["Tahoma", "Arial", "sans-serif"],
   preload: true,
 });

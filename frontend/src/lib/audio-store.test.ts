@@ -12,15 +12,39 @@ import type { PlaybackRate, Track } from "./audio-store";
 
 // ---------------------------------------------------------------------------
 // Stub HTMLAudioElement
+//
+// The stub reproduces the one media behaviour every seek depends on: starting
+// the resource-load algorithm — by assigning `src`, or by calling `load()` —
+// rewinds the element and throws away what it knew about the resource. A stub
+// that skipped this would let a store that seeks too early pass.
 // ---------------------------------------------------------------------------
 
+const HAVE_NOTHING = 0;
+const HAVE_METADATA = 1;
+
 class FakeAudio {
-  src = "";
   currentTime = 0;
   playbackRate = 1;
   paused = true;
+  readyState = HAVE_NOTHING;
 
+  private _src = "";
   private _listeners: Record<string, Array<() => void>> = {};
+
+  get src(): string {
+    return this._src;
+  }
+
+  set src(value: string) {
+    this._src = value;
+    this._resetResource();
+  }
+
+  /** The element reaching HAVE_METADATA — driven by the test, as by a network. */
+  fireLoadedMetadata() {
+    this.readyState = HAVE_METADATA;
+    this.emit("loadedmetadata");
+  }
 
   addEventListener(event: string, cb: () => void) {
     if (!this._listeners[event]) this._listeners[event] = [];
@@ -41,7 +65,14 @@ class FakeAudio {
     this.paused = true;
     this.emit("pause");
   });
-  load = vi.fn();
+  load = vi.fn().mockImplementation(() => {
+    this._resetResource();
+  });
+
+  private _resetResource() {
+    this.currentTime = 0;
+    this.readyState = HAVE_NOTHING;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +98,7 @@ function resetStore() {
     sleepTimerHandle: null,
     _el: null,
     _persistInterval: null,
+    _pendingSeekMs: null,
   });
 }
 
@@ -109,6 +141,7 @@ describe("audio-store", () => {
       localStorage.setItem("pos:42", "15000");
 
       useAudioStore.getState().load(track, { autoplay: false });
+      fakeEl.fireLoadedMetadata();
 
       expect(useAudioStore.getState().positionMs).toBe(15_000);
       expect(fakeEl.currentTime).toBeCloseTo(15);
@@ -119,6 +152,7 @@ describe("audio-store", () => {
       localStorage.setItem("pos:42", "15000");
 
       useAudioStore.getState().load(track, { startMs: 5_000, autoplay: false });
+      fakeEl.fireLoadedMetadata();
 
       expect(useAudioStore.getState().positionMs).toBe(5_000);
       expect(fakeEl.currentTime).toBeCloseTo(5);
@@ -129,6 +163,95 @@ describe("audio-store", () => {
       useAudioStore.getState().load(track, { autoplay: false });
 
       expect(fakeEl.src).toBe("https://cdn.example.com/seg1.opus");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Start position vs. the resource-load algorithm
+  //
+  // `?t=` deep links, "play from here" in search results and per-segment resume
+  // all arrive here: a position asked for while the element is still empty.
+  // -------------------------------------------------------------------------
+  describe("start position", () => {
+    it("lands on startMs once the element reports metadata", () => {
+      useAudioStore
+        .getState()
+        .load(makeTrack(), { startMs: 30_000, autoplay: false });
+
+      // Nothing to seek yet — the element has no duration.
+      expect(fakeEl.currentTime).toBe(0);
+
+      fakeEl.fireLoadedMetadata();
+
+      expect(fakeEl.currentTime).toBeCloseTo(30);
+      expect(useAudioStore.getState().positionMs).toBe(30_000);
+    });
+
+    it("survives the reset that assigning src performs", () => {
+      // Regression: the store used to write currentTime and then call load(),
+      // whose reset silently threw the position away and started at 0.
+      fakeEl.currentTime = 99;
+
+      useAudioStore
+        .getState()
+        .load(makeTrack(), { startMs: 12_000, autoplay: false });
+
+      expect(fakeEl.src).toBe("https://example.com/audio.opus");
+      expect(fakeEl.currentTime).toBe(0); // the reset really happened
+      expect(fakeEl.readyState).toBe(0);
+
+      fakeEl.fireLoadedMetadata();
+
+      expect(fakeEl.currentTime).toBeCloseTo(12);
+    });
+
+    it("seeks immediately when the same resource is already loaded", () => {
+      const track = makeTrack();
+      useAudioStore.getState().load(track, { startMs: 5_000, autoplay: false });
+      fakeEl.fireLoadedMetadata();
+
+      useAudioStore.getState().load(track, { startMs: 20_000, autoplay: false });
+
+      // No second metadata event: the resource never went away.
+      expect(fakeEl.currentTime).toBeCloseTo(20);
+      expect(useAudioStore.getState().positionMs).toBe(20_000);
+    });
+
+    it("lets a seek made during loading win over the parked position", () => {
+      useAudioStore
+        .getState()
+        .load(makeTrack({ durationMs: 60_000 }), {
+          startMs: 30_000,
+          autoplay: false,
+        });
+
+      useAudioStore.getState().seekMs(10_000);
+      fakeEl.fireLoadedMetadata();
+
+      expect(fakeEl.currentTime).toBeCloseTo(10);
+    });
+
+    it("starts playback when autoplay is requested (deep link / play from here)", () => {
+      useAudioStore
+        .getState()
+        .load(makeTrack(), { startMs: 5_000, autoplay: true });
+
+      expect(fakeEl.play).toHaveBeenCalledOnce();
+
+      fakeEl.fireLoadedMetadata();
+      expect(fakeEl.currentTime).toBeCloseTo(5);
+    });
+
+    it("stays paused when the autoplay policy rejects play()", async () => {
+      fakeEl.play.mockRejectedValueOnce(new Error("NotAllowedError"));
+
+      useAudioStore
+        .getState()
+        .load(makeTrack(), { startMs: 5_000, autoplay: true });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(useAudioStore.getState().isPlaying).toBe(false);
     });
   });
 

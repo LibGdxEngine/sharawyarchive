@@ -81,13 +81,16 @@ export interface Segment {
 /**
  * Compact transcript word — keys intentionally short for network efficiency.
  * i = index, t = text, s = start_ms, e = end_ms, c = confidence
+ *
+ * `c` is null for a word that came from a human correction rather than the
+ * recogniser: there is no model confidence to report for text a person wrote.
  */
 export interface TranscriptWord {
   i: number;
   t: string;
   s: number;
   e: number;
-  c: number;
+  c: number | null;
 }
 
 export interface Transcript {
@@ -122,13 +125,20 @@ export interface Waveform {
   duration_ms: number;
 }
 
+/**
+ * The search-result shape, reused by /topics/{slug} and /segments/{id}/related/.
+ *
+ * `surah` and the ayah range are null for a chunk the pipeline could not place
+ * against the mushaf — a khawatir aside, an introduction — so the citation line
+ * is omitted rather than printed with holes in it.
+ */
 export interface SearchChunkResult {
   chunk_id: number;
   segment_id: number;
   segment_title: string;
-  surah: number;
-  ayah_start: number;
-  ayah_end: number;
+  surah: number | null;
+  ayah_start: number | null;
+  ayah_end: number | null;
   kind: "recitation" | "khawatir";
   text: string;
   start_ms: number;
@@ -173,9 +183,14 @@ export interface CorrectionResponse {
 
 export type ClipStatus = "queued" | "rendering" | "done" | "failed";
 
+/**
+ * POST /api/clips/. A fresh job answers 202 "queued", but an identical range
+ * already on file answers 200 with whatever that clip's status is by now — so
+ * the create response carries the full status union, not just "queued".
+ */
 export interface ClipCreateResponse {
   id: string;
-  status: "queued";
+  status: ClipStatus;
 }
 
 export interface Clip {

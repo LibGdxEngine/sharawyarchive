@@ -4,9 +4,11 @@ import { useEffect } from "react";
 import { useAudioStore } from "@/lib/audio-store";
 import type { Track } from "@/lib/audio-store";
 import { kindLabel } from "@/lib/format";
+import { getOfflineAudioUrl } from "@/lib/offline";
 import ShareButton from "./ShareButton";
 import ClipComposer from "./ClipComposer";
 import OfflineButton from "./OfflineButton";
+import RelatedPassages from "./RelatedPassages";
 import TranscriptView from "./TranscriptView";
 import type { Segment, Transcript } from "@/types/models";
 
@@ -27,27 +29,57 @@ interface PlayerProps {
  */
 export default function Player({ segment, transcript, startMs }: PlayerProps) {
   useEffect(() => {
-    const store = useAudioStore.getState();
-    const track: Track = {
-      segmentId: segment.id,
-      title: segment.title,
-      audioUrl: segment.audio_url,
-      durationMs: segment.duration_ms,
+    let cancelled = false;
+
+    void (async () => {
+      // A saved segment plays from Cache Storage. The presigned URL is the
+      // fallback, not the other way round: offline it is unreachable, and it
+      // has an expiry even when there is a network.
+      const offlineUrl = await getOfflineAudioUrl(segment.id);
+      const store = useAudioStore.getState();
+
+      // Whoever ends up not putting this URL into a track has to free it; the
+      // store frees the ones that do get used, when it replaces the track.
+      const discardOfflineUrl = () => {
+        if (offlineUrl !== null) URL.revokeObjectURL(offlineUrl);
+      };
+
+      if (cancelled) {
+        discardOfflineUrl();
+        return;
+      }
+
+      if (store.current !== null && store.current.segmentId === segment.id) {
+        // Already the loaded track: honour an explicit deep link, otherwise
+        // leave playback exactly where the listener left it.
+        discardOfflineUrl();
+        if (startMs !== null) {
+          store.seekMs(startMs);
+          store.play();
+        }
+        return;
+      }
+
+      const track: Track = {
+        segmentId: segment.id,
+        title: segment.title,
+        audioUrl: offlineUrl ?? segment.audio_url,
+        durationMs: segment.duration_ms,
+      };
+
+      // `startMs: undefined` makes the store fall back to the saved
+      // `pos:<segmentId>` position, so /listen resumes where you stopped.
+      // A `?t=` deep link, by contrast, is a request to hear that moment —
+      // so it starts playing (subject to the browser's autoplay policy).
+      store.load(track, {
+        startMs: startMs ?? undefined,
+        autoplay: startMs !== null,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
     };
-
-    if (store.current !== null && store.current.segmentId === segment.id) {
-      // Already the loaded track: honour an explicit deep link, otherwise
-      // leave playback exactly where the listener left it.
-      if (startMs !== null) store.seekMs(startMs);
-      return;
-    }
-
-    // `startMs: undefined` makes the store fall back to the saved
-    // `pos:<segmentId>` position, so /listen resumes where you stopped.
-    store.load(track, {
-      startMs: startMs ?? undefined,
-      autoplay: false,
-    });
   }, [segment, startMs]);
 
   const ayahRange =
@@ -84,13 +116,7 @@ export default function Player({ segment, transcript, startMs }: PlayerProps) {
               </span>
             ) : null}
           </p>
-          <OfflineButton
-            key={segment.id}
-            segmentId={segment.id}
-            title={segment.title}
-            audioUrl={segment.audio_url}
-            waveformUrl={segment.waveform_url}
-          />
+          <OfflineButton key={segment.id} segment={segment} />
         </div>
       </div>
 
@@ -100,6 +126,8 @@ export default function Player({ segment, transcript, startMs }: PlayerProps) {
         عدد الكلمات {transcript.words.length} · إصدار التفريغ{" "}
         {transcript.version} · {transcript.engine}
       </p>
+
+      <RelatedPassages key={segment.id} segmentId={segment.id} />
     </article>
   );
 }

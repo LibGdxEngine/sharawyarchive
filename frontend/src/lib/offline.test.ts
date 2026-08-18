@@ -1,7 +1,8 @@
 /**
  * offline.test.ts
  *
- * Unit tests for the offline library's index bookkeeping functions.
+ * Unit tests for the offline library: index bookkeeping, and the save/read
+ * round trip that /listen and /saved depend on with no network.
  * Uses happy-dom environment (configured in vitest.config.ts).
  * Stubs the caches API for Cache Storage operations.
  */
@@ -12,8 +13,13 @@ import {
   isSegmentOffline,
   removeSegmentOffline,
   getOfflineUsageBytes,
+  getOfflineAudioUrl,
+  getOfflineSegment,
+  getOfflineTranscript,
+  saveSegmentOffline,
 } from "./offline";
 import type { OfflineIndexEntry } from "./offline";
+import type { Segment, Transcript } from "@/types/models";
 
 // ---------------------------------------------------------------------------
 // Helpers — index manipulation via localStorage (mirrors offline.ts internals)
@@ -38,6 +44,64 @@ function makeEntry(overrides: Partial<OfflineIndexEntry> = {}): OfflineIndexEntr
     savedAt: Date.now(),
     ...overrides,
   };
+}
+
+function makeSegment(overrides: Partial<Segment> = {}): Segment {
+  return {
+    id: 1,
+    kind: "khawatir",
+    title: "الفاتحة",
+    surah: 1,
+    ayah_start: 1,
+    ayah_end: 7,
+    duration_ms: 2_400_000,
+    ordinal: 3,
+    audio_url: "https://cdn.example.com/seg1.opus?signed",
+    waveform_url: "https://cdn.example.com/seg1.json?signed",
+    source: { title: "تلفزيون", kind: "tv" },
+    transcript_version: 2,
+    is_human_reviewed: false,
+    ...overrides,
+  };
+}
+
+function makeTranscript(overrides: Partial<Transcript> = {}): Transcript {
+  return {
+    version: 2,
+    engine: "whisper-large-v3",
+    is_human_reviewed: false,
+    words: [
+      { i: 0, t: "بسم", s: 120, e: 480, c: 0.97 },
+      // A human-corrected word carries no model confidence.
+      { i: 1, t: "الله", s: 480, e: 900, c: null },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * Stands in for the three network fetches a save makes: audio, waveform and
+ * transcript, told apart by URL the way the real endpoints are.
+ */
+function stubFetch(transcript: Transcript) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/transcript/")) {
+      return new Response(JSON.stringify(transcript), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes(".json")) {
+      return new Response(JSON.stringify({ peaks: [0, 1], duration_ms: 1000 }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(new Blob([new Uint8Array([1, 2, 3, 4])]), {
+      headers: { "Content-Type": "audio/ogg" },
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +166,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // ---------------------------------------------------------------------------
@@ -213,6 +278,94 @@ describe("getOfflineUsageBytes", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (navigator as any).storage;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Readers — what /listen and /saved fall back to with no network
+// ---------------------------------------------------------------------------
+
+describe("offline readers", () => {
+  it("getOfflineSegment returns null when the segment was never saved", async () => {
+    expect(await getOfflineSegment(1)).toBeNull();
+  });
+
+  it("getOfflineTranscript returns null when the segment was never saved", async () => {
+    expect(await getOfflineTranscript(1)).toBeNull();
+  });
+
+  it("returns null rather than throwing on a corrupted cached body", async () => {
+    const cache = await caches.open("offline-segments");
+    await cache.put(
+      "/offline/segment/1/transcript",
+      new Response("not-valid-json{{{")
+    );
+    expect(await getOfflineTranscript(1)).toBeNull();
+  });
+});
+
+describe("saveSegmentOffline round trip", () => {
+  it("saves a transcript that getOfflineTranscript reads back", async () => {
+    const transcript = makeTranscript();
+    stubFetch(transcript);
+
+    await saveSegmentOffline(makeSegment({ id: 17 }));
+
+    expect(await getOfflineTranscript(17)).toEqual(transcript);
+  });
+
+  it("saves the segment metadata playback needs offline", async () => {
+    stubFetch(makeTranscript());
+    const segment = makeSegment({ id: 17, duration_ms: 2_400_000 });
+
+    await saveSegmentOffline(segment);
+
+    // The duration is the reason this is stored: /saved has nothing else to
+    // build a seekable track from once the network is gone.
+    expect(await getOfflineSegment(17)).toEqual(segment);
+  });
+
+  it("requests the transcript version the segment declares", async () => {
+    const fetchMock = stubFetch(makeTranscript());
+
+    await saveSegmentOffline(makeSegment({ id: 17, transcript_version: 2 }));
+
+    const urls = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(urls.some((url) => url.endsWith("/segments/17/transcript/?v=2"))).toBe(
+      true
+    );
+  });
+
+  it("saves audio that getOfflineAudioUrl can hand to the player", async () => {
+    stubFetch(makeTranscript());
+
+    await saveSegmentOffline(makeSegment({ id: 17 }));
+
+    const url = await getOfflineAudioUrl(17);
+    expect(url).not.toBeNull();
+    if (url !== null) URL.revokeObjectURL(url);
+  });
+
+  it("indexes the segment so isSegmentOffline reports it", async () => {
+    stubFetch(makeTranscript());
+
+    await saveSegmentOffline(makeSegment({ id: 17, title: "الفاتحة" }));
+
+    expect(isSegmentOffline(17)).toBe(true);
+    const [entry] = listOfflineSegments();
+    expect(entry.title).toBe("الفاتحة");
+    expect(entry.bytes).toBeGreaterThan(0);
+  });
+
+  it("forgets everything again on removeSegmentOffline", async () => {
+    stubFetch(makeTranscript());
+    await saveSegmentOffline(makeSegment({ id: 17 }));
+
+    await removeSegmentOffline(17);
+
+    expect(await getOfflineSegment(17)).toBeNull();
+    expect(await getOfflineTranscript(17)).toBeNull();
+    expect(isSegmentOffline(17)).toBe(false);
   });
 });
 

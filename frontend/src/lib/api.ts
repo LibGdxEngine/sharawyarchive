@@ -6,6 +6,7 @@ import type {
   Segment,
   SegmentChunk,
   Transcript,
+  SearchChunkResult,
   SearchResponse,
   Topic,
   TopicDetail,
@@ -88,6 +89,14 @@ export function getSegment(id: number): Promise<Segment> {
  */
 export function getSegmentChunks(id: number): Promise<SegmentChunk[]> {
   return apiFetch<SegmentChunk[]>(`/segments/${id}/chunks/`);
+}
+
+/**
+ * Passages elsewhere in the archive that sit near this segment in embedding
+ * space. Returns the search-result shape, so the same renderer handles them.
+ */
+export function getRelated(id: number): Promise<SearchChunkResult[]> {
+  return apiFetch<SearchChunkResult[]>(`/segments/${id}/related/`);
 }
 
 export function getTranscript(id: number, version?: number): Promise<Transcript> {

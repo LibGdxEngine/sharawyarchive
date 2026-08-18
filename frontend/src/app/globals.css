@@ -149,6 +149,14 @@ body {
   transition: background-color 80ms ease-out, color 80ms ease-out;
 }
 
+/* Words picked for a correction — a hairline underline, never a fill. */
+.word-selected {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--color-ink-faint);
+}
+
 /* Respect prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   html {

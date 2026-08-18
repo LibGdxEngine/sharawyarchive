@@ -98,6 +98,24 @@ class TranscriptSerializer(serializers.Serializer):
     words = TranscriptWordSerializer(many=True)
 
 
+class ChunkSpanSerializer(serializers.Serializer):
+    """One row of ``GET /api/segments/{id}/chunks/``.
+
+    The map from a word to the passage that holds it: the correction UI lets a
+    reader select words in the transcript and has to name a ``chunk_id`` when
+    it posts, so it needs the chunks' word ranges. ``word_start``/``word_end``
+    are inclusive ``TranscriptWord.idx`` values — the same transcript-wide
+    indices ``POST /api/corrections/`` takes — and are null only for a chunk
+    whose span holds no aligned words.
+    """
+
+    chunk_id = serializers.IntegerField()
+    start_ms = serializers.IntegerField()
+    end_ms = serializers.IntegerField()
+    word_start = serializers.IntegerField(allow_null=True)
+    word_end = serializers.IntegerField(allow_null=True)
+
+
 class ChunkResultSerializer(serializers.Serializer):
     """The search-result shape, reused wherever chunks are surfaced (topics,
     related passages) so one renderer on the frontend handles all of them.

@@ -5,6 +5,7 @@ import { useAudioStore } from "@/lib/audio-store";
 import type { Track } from "@/lib/audio-store";
 import { kindLabel } from "@/lib/format";
 import ShareButton from "./ShareButton";
+import ClipComposer from "./ClipComposer";
 import OfflineButton from "./OfflineButton";
 import TranscriptView from "./TranscriptView";
 import type { Segment, Transcript } from "@/types/models";
@@ -65,6 +66,7 @@ export default function Player({ segment, transcript, startMs }: PlayerProps) {
         </h1>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <ShareButton segmentId={segment.id} />
+          <ClipComposer key={segment.id} segment={segment} />
           <span className="text-xs text-[var(--color-ink-faint)]">
             {segment.source.title}
           </span>

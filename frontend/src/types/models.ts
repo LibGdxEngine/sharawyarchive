@@ -97,6 +97,30 @@ export interface Transcript {
   words: TranscriptWord[];
 }
 
+/**
+ * One transcript chunk of a segment, from GET /api/segments/{id}/chunks/.
+ *
+ * The bridge between the transcript view and POST /api/corrections/: the
+ * transcript payload carries word indices only, while a correction is filed
+ * against a `chunk_id`, so the UI resolves the owning chunk from this list.
+ */
+export interface SegmentChunk {
+  chunk_id: number;
+  start_ms: number;
+  end_ms: number;
+  /** First word index of the chunk, into the transcript word array. */
+  word_start: number;
+  /** Last word index of the chunk, inclusive. */
+  word_end: number;
+}
+
+/** Precomputed waveform, served as JSON from `Segment.waveform_url`. */
+export interface Waveform {
+  /** Amplitude per bucket, normalized to 0..1. */
+  peaks: number[];
+  duration_ms: number;
+}
+
 export interface SearchChunkResult {
   chunk_id: number;
   segment_id: number;

@@ -1,8 +1,10 @@
+import { pickChunkForWord } from "@/lib/correction-selection";
 import type {
   Surah,
   SurahDetail,
   AyahDetail,
   Segment,
+  SegmentChunk,
   Transcript,
   SearchResponse,
   Topic,
@@ -18,6 +20,23 @@ const BASE_URL =
     ""
   );
 
+/**
+ * A non-2xx API response.
+ *
+ * Carries the status so callers can tell apart the cases the UI has words for
+ * — 429 (throttled) and 404 (endpoint or object missing) — from a generic
+ * failure. Extends Error, so existing `catch {}` sites are unaffected.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, path: string) {
+    super(`API ${status}: ${path}`);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
@@ -28,7 +47,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    throw new Error(`API ${res.status}: ${path}`);
+    throw new ApiError(res.status, path);
   }
   return res.json() as Promise<T>;
 }
@@ -59,6 +78,16 @@ export function getAyah(surah: number, ayah: number): Promise<AyahDetail> {
 
 export function getSegment(id: number): Promise<Segment> {
   return apiFetch<Segment>(`/segments/${id}/`);
+}
+
+/**
+ * Chunk map of a segment — word ranges paired with the chunk ids corrections
+ * are filed against. Throws ApiError(404) where the deployment predates the
+ * endpoint, which the correction UI reports as "unavailable" rather than an
+ * error.
+ */
+export function getSegmentChunks(id: number): Promise<SegmentChunk[]> {
+  return apiFetch<SegmentChunk[]>(`/segments/${id}/chunks/`);
 }
 
 export function getTranscript(id: number, version?: number): Promise<Transcript> {
@@ -119,6 +148,35 @@ export function postCorrection(
   return apiFetch<CorrectionResponse>("/corrections/", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Submit a correction for a word range of a segment.
+ *
+ * The transcript view knows word indices; the corrections endpoint is keyed by
+ * `chunk_id`. This resolves the gap by reading the segment's chunk map first
+ * and posting against the chunk that owns `wordStart`.
+ *
+ * Throws ApiError — 404 when the chunk map is missing or empty, 429 when the
+ * IP throttle has tripped.
+ */
+export async function postCorrectionForWords(
+  segmentId: number,
+  wordStart: number,
+  wordEnd: number,
+  suggestedText: string
+): Promise<CorrectionResponse> {
+  const chunks = await getSegmentChunks(segmentId);
+  const chunk = pickChunkForWord(chunks, wordStart);
+  if (chunk === null) {
+    throw new ApiError(404, `/segments/${segmentId}/chunks/`);
+  }
+  return postCorrection({
+    chunk_id: chunk.chunk_id,
+    word_start: wordStart,
+    word_end: wordEnd,
+    suggested_text: suggestedText,
   });
 }
 

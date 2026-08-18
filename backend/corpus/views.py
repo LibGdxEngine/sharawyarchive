@@ -17,9 +17,11 @@ from rest_framework.views import APIView
 
 from api.cache import ImmutableCacheMixin
 
+from .corrections import word_range_in_span
 from .models import Chunk, ChunkTopic, Segment, Topic
 from .serializers import (
     ChunkResultSerializer,
+    ChunkSpanSerializer,
     CorrectionCreatedSerializer,
     CorrectionCreateSerializer,
     SegmentDetailSerializer,
@@ -77,6 +79,45 @@ class SegmentTranscriptView(ImmutableCacheMixin, APIView):
                 ],
             }
         )
+
+
+class SegmentChunksView(ImmutableCacheMixin, APIView):
+    """``GET /api/segments/{id}/chunks/`` — passage spans and their word ranges.
+
+    The client already has the word array from ``/transcript/``; this says
+    which passage each word belongs to, which is what a correction has to name
+    when it is submitted. Content-addressed like the transcript itself: the
+    spans only move when an approved correction bumps ``Transcript.version``.
+
+    Assembled from two ``values_list`` queries rather than through the
+    serializer, for the reason ``SegmentTranscriptView`` gives — the payload is
+    mechanical and a transcript can carry thousands of words.
+    """
+
+    @extend_schema(
+        operation_id='segment_chunks_list', responses=ChunkSpanSerializer(many=True)
+    )
+    def get(self, request: Request, pk: int) -> Response:
+        segment = get_object_or_404(Segment.objects.select_related('transcript'), pk=pk)
+        transcript = getattr(segment, 'transcript', None)
+        if transcript is None:
+            raise NotFound(f'segment {pk} has no transcript yet')
+        words = list(transcript.words.values_list('idx', 'start_ms'))
+        rows = []
+        for chunk_id, start_ms, end_ms in transcript.chunks.order_by('idx').values_list(
+            'id', 'start_ms', 'end_ms'
+        ):
+            word_range = word_range_in_span(words, start_ms, end_ms)
+            rows.append(
+                {
+                    'chunk_id': chunk_id,
+                    'start_ms': start_ms,
+                    'end_ms': end_ms,
+                    'word_start': None if word_range is None else word_range[0],
+                    'word_end': None if word_range is None else word_range[1],
+                }
+            )
+        return Response(rows)
 
 
 class SegmentRelatedView(ImmutableCacheMixin, APIView):

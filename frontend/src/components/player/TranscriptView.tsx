@@ -4,6 +4,15 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAudioStore } from "@/lib/audio-store";
 import { buildLines, buildWordLineMap } from "@/lib/transcript";
+import {
+  EMPTY_SELECTION,
+  clearSelection,
+  isWordSelected,
+  rangeText,
+  selectWord,
+  selectedRange,
+} from "@/lib/correction-selection";
+import CorrectionPanel from "./CorrectionPanel";
 import { useActiveWordIndex, usePrefersReducedMotion } from "./useActiveWord";
 import type { TranscriptWord } from "@/types/models";
 
@@ -58,6 +67,16 @@ export default function TranscriptView({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+
+  // Correction mode: while on, clicking a word selects instead of seeking.
+  const [correcting, setCorrecting] = useState(false);
+  const [selection, setSelection] = useState(EMPTY_SELECTION);
+  const range = selectedRange(selection);
+
+  const leaveCorrectionMode = useCallback(() => {
+    setSelection(clearSelection());
+    setCorrecting(false);
+  }, []);
 
   // Virtualizing the transcript is a hard requirement, and this hook opts the
   // component out of React Compiler memoization. Harmless here: the component
@@ -116,6 +135,16 @@ export default function TranscriptView({
     };
   }, []);
 
+  // Escape leaves correction mode — the way out that does not need the mouse.
+  useEffect(() => {
+    if (!correcting) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") leaveCorrectionMode();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [correcting, leaveCorrectionMode]);
+
   const resumeFollowing = () => {
     setAutoScroll(true);
     scrollActiveLineIntoPlace(
@@ -132,8 +161,34 @@ export default function TranscriptView({
     );
   }
 
+  const onWordClick = (word: TranscriptWord) => {
+    if (correcting) {
+      setSelection((previous) => selectWord(previous, word.i));
+      return;
+    }
+    seekMs(word.s);
+  };
+
   return (
     <div className="relative">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            correcting ? leaveCorrectionMode() : setCorrecting(true)
+          }
+          aria-pressed={correcting}
+          className="text-xs text-[var(--color-ink-muted)] underline underline-offset-4"
+        >
+          {correcting ? "إنهاء وضع التصحيح" : "اقتراح تصحيح"}
+        </button>
+        {correcting ? (
+          <span className="text-xs text-[var(--color-ink-faint)]">
+            اختر أول كلمة ثم آخر كلمة · Esc للخروج
+          </span>
+        ) : null}
+      </div>
+
       <div
         ref={scrollRef}
         tabIndex={0}
@@ -173,12 +228,17 @@ export default function TranscriptView({
                       {position > 0 ? " " : null}
                       <button
                         type="button"
-                        onClick={() => seekMs(word.s)}
+                        onClick={() => onWordClick(word)}
                         aria-current={
                           word.i === activeWordIndex ? "true" : undefined
                         }
+                        aria-pressed={
+                          correcting ? isWordSelected(selection, word.i) : undefined
+                        }
                         className={`inline cursor-pointer bg-transparent p-0 text-inherit ${
                           word.i === activeWordIndex ? "word-active" : ""
+                        } ${
+                          isWordSelected(selection, word.i) ? "word-selected" : ""
                         }`}
                       >
                         {word.t}
@@ -191,6 +251,16 @@ export default function TranscriptView({
           })}
         </div>
       </div>
+
+      {correcting && range !== null ? (
+        <CorrectionPanel
+          key={`${range.start}-${range.end}`}
+          segmentId={segmentId}
+          range={range}
+          originalText={rangeText(words, range)}
+          onDismiss={() => setSelection(clearSelection())}
+        />
+      ) : null}
 
       {!autoScroll && activeLineIndex >= 0 ? (
         <button

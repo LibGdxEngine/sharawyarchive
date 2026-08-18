@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import withSerwistInit from "@serwist/next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const withSerwist = withSerwistInit({
   swSrc: "src/sw.ts",
@@ -14,4 +15,22 @@ const nextConfig: NextConfig = {
   output: "standalone",
 };
 
-export default withSerwist(nextConfig);
+const withServiceWorker = withSerwist(nextConfig);
+
+/*
+ * Sentry wraps the Serwist-wrapped config, not the other way round, so the
+ * service worker is still bundled exactly as before.
+ *
+ * The wrapper is applied only when SENTRY_DSN is present at build time: the
+ * build plugin otherwise adds nothing but noise, and source-map upload needs
+ * credentials the default build has no reason to carry.
+ */
+export default process.env.SENTRY_DSN
+  ? withSentryConfig(withServiceWorker, {
+      silent: true,
+      telemetry: false,
+      // Uploading source maps needs an auth token + org/project; releases are
+      // built without one, so keep the plugin to instrumentation duties only.
+      sourcemaps: { disable: true },
+    })
+  : withServiceWorker;

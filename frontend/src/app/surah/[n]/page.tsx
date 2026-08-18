@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ErrorNote from "@/components/ErrorNote";
 import SiteHeader from "@/components/SiteHeader";
 import { getAyah, getSurah } from "@/lib/api";
 import { kindLabel, toArabicIndic } from "@/lib/format";
+import { SITE_NAME } from "@/lib/site";
 import type { SegmentSummary, SurahDetail } from "@/types/models";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +36,47 @@ async function loadSegmentsByAyah(
     }
   });
   return byAyah;
+}
+
+export async function generateMetadata({
+  params,
+}: SurahPageProps): Promise<Metadata> {
+  const { n } = await params;
+  const surahNumber = Number.parseInt(n, 10);
+
+  // The surah name comes from the API, which may be unreachable — fall back to
+  // a static title rather than failing the render.
+  const fallback: Metadata = {
+    title: `سورة — ${SITE_NAME}`,
+    alternates: { canonical: `/surah/${n}` },
+  };
+  if (!Number.isInteger(surahNumber) || surahNumber < 1 || surahNumber > 114) {
+    return fallback;
+  }
+
+  let surah: SurahDetail;
+  try {
+    surah = await getSurah(surahNumber, 1);
+  } catch {
+    return fallback;
+  }
+
+  const title = `سورة ${surah.name_ar} — ${SITE_NAME}`;
+  const description = `سورة ${surah.name_ar} · ${surah.ayah_count} آية · تلاوات وخواطر الشيخ محمد متولي الشعراوي مع تفريغ نصّي متزامن`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/surah/${surahNumber}` },
+    openGraph: {
+      type: "website",
+      siteName: SITE_NAME,
+      locale: "ar_AR",
+      title,
+      description,
+      url: `/surah/${surahNumber}`,
+    },
+  };
 }
 
 export default async function SurahPage({

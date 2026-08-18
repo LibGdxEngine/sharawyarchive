@@ -6,15 +6,29 @@ import KeyboardShortcuts from "@/components/player/KeyboardShortcuts";
 import PlayerBar from "@/components/player/PlayerBar";
 import InstallPrompt from "@/components/InstallPrompt";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
+import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const viewport: Viewport = {
   themeColor: "#1a6b4a",
 };
 
+const DESCRIPTION =
+  "أرشيف صوتي قابل للبحث لخواطر الشيخ محمد متولي الشعراوي — ابحث عن أي عبارة وانتقل مباشرةً إلى لحظة قولها";
+
 export const metadata: Metadata = {
-  title: "أرشيف الشعراوي",
-  description:
-    "أرشيف صوتي قابل للبحث لخواطر الشيخ محمد متولي الشعراوي — ابحث عن أي عبارة وانتقل مباشرةً إلى لحظة قولها",
+  // Every route below resolves its relative canonical/OG urls against this.
+  metadataBase: new URL(SITE_URL),
+  title: SITE_NAME,
+  description: DESCRIPTION,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "ar_AR",
+    siteName: SITE_NAME,
+    title: SITE_NAME,
+    description: DESCRIPTION,
+    url: "/",
+  },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

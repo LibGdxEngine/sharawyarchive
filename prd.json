@@ -75,7 +75,7 @@
       "id": "US-006",
       "title": "Search: lexical + semantic + hybrid",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "search/services.py: Meilisearch index 'chunks' configured with searchable=[text_normalized], filterable=[surah,kind,ayah_start], sortable=[surah,start_ms]; documents carry {id,segment_id,surah,ayah_start,ayah_end,kind,text,text_normalized,start_ms,end_ms}",
         "Queries pass through normalize_for_index before hitting Meili (test: query with wrong hamzas/diacritics returns same results as canonical spelling, against live Meilisearch)",

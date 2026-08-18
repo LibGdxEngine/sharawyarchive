@@ -16,3 +16,9 @@
 - pgvector HNSW index chunk_embedding_hnsw (m=16, ef_construction=64, cosine) confirmed in pg_indexes.
 - Shared modules owned by orchestrator (agents must NOT edit): core/settings/base.py additions, corpus/embeddings.py, corpus/storage.py.
 - Concurrent-agent hygiene: per-agent DB_NAME for pytest (pipeline_pg / search_pg), MEILI_INDEX_PREFIX for test isolation.
+
+## Search landed (US-006)
+- search.services public API: ensure_chunks_index/index_chunks/delete_segment_chunks/search/rrf_merge/parse_ayah_reference; SearchResponse dataclasses.
+- Meili matchingStrategy must be "all": default "last" drops words until the ال prefix matches everything (verified live) — lexical precision, semantic recall.
+- HNSW confirmed in EXPLAIN under enable_seqscan=off (chunk_embedding_hnsw index scan).
+- mypy baseline: django-stubs plugin not enabled in backend/pyproject.toml (78 pre-existing errors in corpus/quran) — decide in US-016 whether to enable plugin or keep mypy advisory (Makefile already treats mypy as advisory).

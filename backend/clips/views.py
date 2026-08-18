@@ -1,7 +1,8 @@
-"""Clip render jobs. This app enqueues them; the renderer (Phase 8) runs them."""
+"""Clip render jobs: the API enqueues them, :mod:`clips.tasks` runs them."""
 
 from __future__ import annotations
 
+from django.db import transaction
 from django.db.models import QuerySet
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -11,8 +12,9 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from .models import Clip
+from .models import Clip, ClipStatus
 from .serializers import ClipCreateSerializer, ClipDetailSerializer, ClipStatusSerializer
+from .tasks import render_clip
 
 
 class ClipCreateView(APIView):
@@ -23,6 +25,10 @@ class ClipCreateView(APIView):
     own cache: the second person to share the same passage joins the first
     person's render instead of starting another. ``202`` means "queued by you",
     ``200`` means "already queued".
+
+    The one job that is *not* simply handed back is a failed one: asking for it
+    again queues one more attempt on the same row, so a transient worker or
+    storage failure is not a clip nobody can ever have.
     """
 
     throttle_classes = [ScopedRateThrottle]
@@ -37,6 +43,20 @@ class ClipCreateView(APIView):
         serializer = ClipCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         clip, created = Clip.objects.get_or_create(**serializer.validated_data)
+        if created or clip.status == ClipStatus.FAILED:
+            # A queued, rendering or finished job is left strictly alone — that
+            # is the cache doing its work. A *failed* one is re-queued once per
+            # request instead: the failure is usually transient (a worker died,
+            # storage blinked) and the alternative is a permanently dead clip
+            # that nobody can ever ask for again, because the unique constraint
+            # hands every later request the same broken row.
+            if not created:
+                clip.status = ClipStatus.QUEUED
+                clip.error = ''
+                clip.save(update_fields=['status', 'error'])
+            # After commit, or the worker races the transaction and looks up a
+            # row that is not there yet.
+            transaction.on_commit(lambda: render_clip.delay(str(clip.pk)))
         return Response(
             ClipStatusSerializer(clip).data,
             status=status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK,

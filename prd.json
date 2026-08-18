@@ -210,7 +210,7 @@
       "id": "US-016",
       "title": "Full-stack integration verification",
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "make dev brings up the full stack; import_quran completes (114/6236) against the docker db",
         "A synthesized audio fixture runs the whole pipeline (stub engines) end-to-end producing indexed chunks; /api/search/?q= returns the chunk with correct start_ms",

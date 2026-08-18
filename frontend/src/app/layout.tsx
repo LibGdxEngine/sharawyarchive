@@ -1,21 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { quranFont, uiFont } from "@/fonts";
 import "./globals.css";
-import SessionProvider from "../components/SessionProvider";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import GlobalAudio from "@/components/GlobalAudio";
 
 export const metadata: Metadata = {
-  title: "Dockerized Full-Stack Template",
-  description: "Next.js & Django starter boilerplate with Postgres, Redis, Celery, and Caddy",
+  title: "أرشيف الشعراوي",
+  description:
+    "أرشيف صوتي قابل للبحث لخواطر الشيخ محمد متولي الشعراوي — ابحث عن أي عبارة وانتقل مباشرةً إلى لحظة قولها",
 };
 
 export default function RootLayout({
@@ -25,13 +16,13 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      dir="rtl"
+      lang="ar"
+      className={`${quranFont.variable} ${uiFont.variable}`}
     >
-      <body className="min-h-full flex flex-col">
-        <SessionProvider>
-          {children}
-        </SessionProvider>
+      <body>
+        <GlobalAudio />
+        {children}
       </body>
     </html>
   );

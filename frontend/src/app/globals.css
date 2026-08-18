@@ -1,26 +1,121 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Design tokens — light default, dark via prefers-color-scheme
+   ============================================================ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Ground */
+  --color-bg:          #fafaf9;
+  --color-bg-subtle:   #f4f4f2;
+  --color-surface:     #ffffff;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Text */
+  --color-ink:         #141412;
+  --color-ink-muted:   #5c5b57;
+  --color-ink-faint:   #9b9994;
+
+  /* Borders */
+  --color-border:      #e4e3de;
+  --color-border-subtle: #eeede8;
+
+  /* Accent — deep green, used ONLY for active-word highlight & focus rings */
+  --color-accent:      #1a6b4a;
+  --color-accent-bg:   #d4eee3;
+
+  /* Font families injected by next/font/local */
+  --font-quran: "Amiri Quran", "Amiri", serif;
+  --font-ui:    "IBM Plex Sans Arabic", "Tahoma", "Arial", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --color-bg:          #101312;
+    --color-bg-subtle:   #181b19;
+    --color-surface:     #1e2220;
+
+    --color-ink:         #f0ede8;
+    --color-ink-muted:   #a8a49d;
+    --color-ink-faint:   #6a675f;
+
+    --color-border:      #2c302d;
+    --color-border-subtle: #242724;
+
+    --color-accent:      #3aad7a;
+    --color-accent-bg:   #0d2e1f;
   }
 }
 
+:root[data-theme="dark"] {
+  --color-bg:          #101312;
+  --color-bg-subtle:   #181b19;
+  --color-surface:     #1e2220;
+
+  --color-ink:         #f0ede8;
+  --color-ink-muted:   #a8a49d;
+  --color-ink-faint:   #6a675f;
+
+  --color-border:      #2c302d;
+  --color-border-subtle: #242724;
+
+  --color-accent:      #3aad7a;
+  --color-accent-bg:   #0d2e1f;
+}
+
+/* Tailwind v4 theme tokens */
+@theme {
+  --font-quran: var(--font-quran);
+  --font-ui:    var(--font-ui);
+
+  --color-bg:            var(--color-bg);
+  --color-bg-subtle:     var(--color-bg-subtle);
+  --color-surface:       var(--color-surface);
+  --color-ink:           var(--color-ink);
+  --color-ink-muted:     var(--color-ink-muted);
+  --color-ink-faint:     var(--color-ink-faint);
+  --color-border:        var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-accent:        var(--color-accent);
+  --color-accent-bg:     var(--color-accent-bg);
+}
+
+/* ============================================================
+   Base styles
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Accessible focus outline — uses accent, visible on all backgrounds */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

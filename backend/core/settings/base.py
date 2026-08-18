@@ -145,3 +145,27 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+# Route heavy ingestion work to a dedicated queue consumed by pipeline workers.
+CELERY_TASK_ROUTES = {
+    'pipeline.*': {'queue': 'pipeline'},
+}
+
+# Meilisearch
+MEILI_URL = os.environ.get('MEILI_URL', 'http://localhost:7700')
+MEILI_MASTER_KEY = os.environ.get('MEILI_MASTER_KEY', 'devmasterkey')
+# Prefix lets test runs isolate their indexes on a shared Meilisearch.
+MEILI_INDEX_PREFIX = os.environ.get('MEILI_INDEX_PREFIX', '')
+
+# Object storage for audio/waveforms/clips (MinIO in dev, Cloudflare R2 in prod).
+AUDIO_S3_ENDPOINT_URL = os.environ.get('AUDIO_S3_ENDPOINT_URL', 'http://localhost:9000')
+AUDIO_S3_BUCKET = os.environ.get('AUDIO_S3_BUCKET', 'shaarawy')
+AUDIO_S3_ACCESS_KEY_ID = os.environ.get('AUDIO_S3_ACCESS_KEY_ID', 'minioadmin')
+AUDIO_S3_SECRET_ACCESS_KEY = os.environ.get('AUDIO_S3_SECRET_ACCESS_KEY', 'minioadmin')
+AUDIO_S3_REGION = os.environ.get('AUDIO_S3_REGION', 'auto')
+AUDIO_URL_TTL_SECONDS = int(os.environ.get('AUDIO_URL_TTL_SECONDS', str(6 * 3600)))
+
+# Pluggable engines: 'stub' is deterministic and dependency-free (tests/dev);
+# real backends live in pipeline/ and are selected in worker environments.
+EMBEDDING_BACKEND = os.environ.get('EMBEDDING_BACKEND', 'stub')
+ASR_BACKEND = os.environ.get('ASR_BACKEND', 'stub')

@@ -27,3 +27,12 @@
 - pipeline/ package: parsers (config regex + --dry-run), engines (stub + lazy faster-whisper/CTC), pure chunking, 7 Celery stages on 'pipeline' queue, sync driver (python -m pipeline.run), async dispatch via send_task by name (run_pipeline command). 50 tests.
 - Live e2e verified: MinIO + Meili real run; idempotent re-run 0.94s; celery worker consumed dispatched chain.
 - Fixed cross-suite test isolation: quran's session-scoped full-import fixture leaks into shared test DB; search fixtures now update_or_create and assert against DB state. Lesson: fixtures must tolerate a fully-populated Quran.
+
+## Final wave + integration (US-011/012/013/015/016)
+- Corrections approve: transcript-wide inclusive word idx; unequal-count replace redistributes timings integer-evenly and renumbers tail via two bulk UPDATEs (park above max idx first — unique constraint is per-row). Meili updates via transaction.on_commit.
+- Chunk ownership: word belongs to chunk whose [start_ms,end_ms) contains word.start_ms — single definition shared by /segments/{id}/chunks/ and the corrections validator.
+- libass reverses Arabic when per-word {\k} tags split bidi runs: emit words reversed per line + \kt absolute karaoke clocks. Documented in clips/subtitles.py docstring; do not "simplify" it away.
+- Clip videos burn "نص آلي" machine-transcript mark separate from attribution so overrides can't drop it (CLAUDE.md rule 1).
+- Integration e2e proven: synthesized audio → pipeline (stub ASR) → search API returns the chunk with start_ms; hamza-misspelled query matches; re-run fully skipped. 668+50+80 tests green.
+- Host disk at 97% (5.4G free) — pip cache purged by clips agent; watch before large builds.
+- mypy advisory: django-stubs plugin not enabled (pre-existing); ruff/eslint/tsc are the enforced linters.

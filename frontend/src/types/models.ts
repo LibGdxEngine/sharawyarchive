@@ -108,10 +108,11 @@ export interface SegmentChunk {
   chunk_id: number;
   start_ms: number;
   end_ms: number;
-  /** First word index of the chunk, into the transcript word array. */
-  word_start: number;
-  /** Last word index of the chunk, inclusive. */
-  word_end: number;
+  /** First word index of the chunk, into the transcript word array.
+   *  Null for a degenerate chunk whose span holds no aligned words. */
+  word_start: number | null;
+  /** Last word index of the chunk, inclusive. Null like `word_start`. */
+  word_end: number | null;
 }
 
 /** Precomputed waveform, served as JSON from `Segment.waveform_url`. */

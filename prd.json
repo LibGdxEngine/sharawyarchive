@@ -171,7 +171,7 @@
       "id": "US-013",
       "title": "Clip cards (Phase 8)",
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "POST /api/clips/ validates 15-60s range (hard cap 60s), enqueues Celery render; GET /api/clips/{id}/ reports status + URL",
         "Render task builds ASS subtitle file with per-word \\k karaoke timing from TranscriptWord and burns onto 1080x1920 canvas, audio trimmed via -ss/-to, output H.264+AAC (verified by ffprobe in test with synthesized audio)",

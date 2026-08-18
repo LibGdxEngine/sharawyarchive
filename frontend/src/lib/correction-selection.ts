@@ -104,6 +104,9 @@ export function pickChunkForWord(
   let nearestDistance = Number.POSITIVE_INFINITY;
 
   for (const chunk of chunks) {
+    if (chunk.word_start === null || chunk.word_end === null) {
+      continue;
+    }
     if (wordIndex >= chunk.word_start && wordIndex <= chunk.word_end) {
       return chunk;
     }

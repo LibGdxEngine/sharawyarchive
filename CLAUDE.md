@@ -12,8 +12,9 @@ khawatir (commentary), with word-level audio/text alignment.
 1. **Quran text NEVER comes from ASR output.** Ayah text is imported from Tanzil/QUL
    only. ASR output is stored exclusively on the `Transcript` model and is always
    rendered with a "machine transcript" marker in the UI.
-2. All Arabic search/compare goes through `corpus.arabic.normalize()`. Never compare
-   raw Arabic strings. Display text keeps full diacritics; index text is normalized.
+2. All Arabic search/compare goes through `corpus.arabic.normalize_for_index()`
+   (or `normalize_light()` for display fallback). Never compare raw Arabic
+   strings. Display text keeps full diacritics; index text is normalized.
 3. `dir="rtl"` and `lang="ar"` at the document level. No per-component RTL hacks.
 4. Audio URLs are always presigned/CDN URLs generated server-side. No bucket paths in
    the API response.

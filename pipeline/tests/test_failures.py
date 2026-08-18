@@ -11,7 +11,7 @@ from corpus.models import PipelineRun, PipelineRunStatus, Segment, SegmentStatus
 from pipeline import run, stages
 from pipeline.engines import StubASR
 
-from .conftest import VALID_TWO, FakeSearchServices
+from .conftest import VALID_ONE, VALID_TWO, FakeSearchServices, synthesize_audio
 
 SOURCE_TITLE = "Failure isolation tape"
 BOOM = "engine exploded on purpose"
@@ -107,3 +107,54 @@ def test_a_stage_never_raises_out_of_its_task() -> None:
     assert result.skipped is False
     assert "no longer exists" in result.detail
     assert PipelineRun.objects.filter(status=PipelineRunStatus.FAILED).exists()
+
+
+SOURCE_TITLE_DELETE = "Delete-source-file tape"
+
+
+@pytest.mark.django_db
+def test_segment_fails_at_transcode_when_source_file_deleted(
+    tmp_path: Path,
+    fake_search: FakeSearchServices,
+) -> None:
+    """Deleting a source file after ingest produces a real transcode failure.
+
+    This is a NON-mocked end-to-end path: ingest two real audio files, then
+    remove one from disk before running the driver.  The intact segment must
+    reach ``indexed``; the other must land in ``failed`` with a ``PipelineRun``
+    at stage ``transcode`` whose detail contains a real Python traceback.
+    No engine monkeypatching is involved.
+    """
+    folder = tmp_path / "corpus"
+    folder.mkdir()
+    synthesize_audio(folder / VALID_ONE, frequency=440)
+    synthesize_audio(folder / VALID_TWO, frequency=523)
+
+    # Phase 1: ingest both files; both Segments are created and on disk.
+    files = stages.do_ingest(str(folder), SOURCE_TITLE_DELETE, "khawatir")
+    assert len(files) == 2
+
+    # Phase 2: remove one source file — simulates deletion after ingest.
+    (folder / VALID_TWO).unlink()
+
+    # Phase 3: drive the per-segment stages for both items (driver logic).
+    summary = run.Summary()
+    for item in files:
+        outcome, _ = run.process_segment(item.segment_id, item.local_path)
+        summary.record(outcome)
+
+    # Phase 4: assert driver summary.
+    assert summary.processed == 1
+    assert summary.failed == 1
+
+    # The intact segment reached indexed; the victim stopped at transcode.
+    intact = Segment.objects.get(title=Path(VALID_ONE).stem)
+    victim = Segment.objects.get(title=Path(VALID_TWO).stem)
+    assert intact.status == SegmentStatus.INDEXED
+    assert victim.status == SegmentStatus.FAILED
+
+    # The transcode PipelineRun for the victim carries a real traceback.
+    failed_run = PipelineRun.objects.get(
+        segment=victim, stage="transcode", status=PipelineRunStatus.FAILED
+    )
+    assert "Traceback" in failed_run.detail

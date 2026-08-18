@@ -14,6 +14,32 @@ Each stage exists twice: ``do_<stage>()`` is the synchronous function (used by
 ``pipeline.run`` and by the tests), and the Celery task of the same name wraps
 it. Task names are the strings Django dispatches by
 (``send_task('pipeline.ingest', ...)``) — renaming one is a breaking change.
+
+Idempotency contract per stage
+-------------------------------
+
+Each stage guards against being run twice by checking for its own completed
+output, not a shared ``sha256`` column.  The exact guard per stage is:
+
+* **ingest** — ``sha256_file(path)`` → ``AudioAsset.sha256``; an existing asset
+  whose segment is still alive returns the existing ``IngestedFile`` with
+  ``created=False`` and skips all database writes.
+* **transcode** — a completed ``PipelineRun`` row for this segment at
+  ``stage=TRANSCODE`` *and* the Opus object already present in object storage →
+  ``StageSkipped``.  Both conditions must hold: a run row without the object
+  (upload interrupted) is re-executed.
+* **transcribe** — an existing ``Transcript`` row for this segment →
+  ``StageSkipped``.
+* **align** — existing ``TranscriptWord`` rows on the segment's transcript →
+  ``StageSkipped``.
+* **chunk** — an existing ``Chunk`` row on the segment's transcript →
+  ``StageSkipped``.
+* **embed** — ``Chunk.embedding`` non-null for every pending chunk → ``StageSkipped``.
+* **index_segment** — ``Segment.status == INDEXED`` → ``StageSkipped``.
+
+Checking for a stage's own output (rather than a shared flag) means the stage
+only skips when *its* work is genuinely done; partial writes (process killed
+mid-stage) are automatically retried on the next run.
 """
 
 from __future__ import annotations
@@ -531,6 +557,14 @@ def ayah_starts_for(segment: Segment, word_count: int) -> list[int] | None:
     count = int(segment.ayah_end) - int(segment.ayah_start) + 1
     if count < 1 or word_count == 0:
         return None
+    # TODO(real-alignment): replace with real ayah-text CTC alignment (Phase 6)
+    logger.warning(
+        "segment %s (recitation, ayahs %s-%s): using even-pace placeholder ayah "
+        "boundaries — transcription accuracy will be limited until real alignment lands",
+        segment.pk,
+        segment.ayah_start,
+        segment.ayah_end,
+    )
     return sorted({round(index * word_count / count) for index in range(count)})
 
 

@@ -16,9 +16,10 @@ instead: ``python -m pipeline.run --folder ... --source-title ...``.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandParser
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from core.celery import app as celery_app
 from corpus.models import SegmentKind
@@ -46,10 +47,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        folder = options["folder"]
+        if not Path(folder).is_dir():
+            raise CommandError(
+                f"folder does not exist or is not a directory: {folder}"
+            )
         result = celery_app.send_task(
             INGEST_TASK,
             kwargs={
-                "folder": options["folder"],
+                "folder": folder,
                 "source_title": options["source_title"],
                 "kind": options["kind"],
                 "limit": options["limit"],

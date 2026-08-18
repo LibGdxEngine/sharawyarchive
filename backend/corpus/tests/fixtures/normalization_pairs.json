@@ -1,0 +1,422 @@
+[
+  {
+    "note": "empty string",
+    "input": "",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "the full harakat set standing alone: fathatan dammatan kasratan fatha damma kasra shadda sukun",
+    "input": "ًٌٍَُِّْ",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "combining maddah/hamza-above/hamza-below with no base to compose onto",
+    "input": "ٕٓٔ",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "dagger alif (superscript alef) alone",
+    "input": "ٰ",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "tatweel run alone",
+    "input": "ـــ",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "Quranic annotation marks U+06D6..U+06DC (waqf signs, small high seen)",
+    "input": "ۖۗۘۙۚۛۜ",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "Quranic annotation marks U+06DD..U+06E4 (end of ayah, rub el hizb, zeros, small meem, small low seen, small high madda)",
+    "input": "۝۞ۣ۟۠ۡۢۤ",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "Quranic annotation marks U+06E5..U+06ED (small waw, small yeh, sajdah sign, centre stops, small low meem)",
+    "input": "ۥۦۧۨ۩۪ۭ۫۬",
+    "light": "",
+    "index": ""
+  },
+  {
+    "note": "plain word with no marks passes through untouched",
+    "input": "محمد",
+    "light": "محمد",
+    "index": "محمد"
+  },
+  {
+    "note": "shadda + fatha stripped by both entry points",
+    "input": "مَحَّمَد",
+    "light": "محمد",
+    "index": "محمد"
+  },
+  {
+    "note": "tatweel used as intra-word justification",
+    "input": "مــحــمــد",
+    "light": "محمد",
+    "index": "محمد"
+  },
+  {
+    "note": "alef wasla survives normalize_light, folds to bare alef for the index",
+    "input": "ٱلله",
+    "light": "ٱلله",
+    "index": "الله"
+  },
+  {
+    "note": "lafz al-jalala written with shadda + dagger alif: اللّٰه -> الله",
+    "input": "اللّٰه",
+    "light": "الله",
+    "index": "الله"
+  },
+  {
+    "note": "Uthmani lafz al-jalala ٱللَّه",
+    "input": "ٱللَّه",
+    "light": "ٱلله",
+    "index": "الله"
+  },
+  {
+    "note": "alef with hamza above",
+    "input": "أ",
+    "light": "أ",
+    "index": "ا"
+  },
+  {
+    "note": "alef with hamza below",
+    "input": "إ",
+    "light": "إ",
+    "index": "ا"
+  },
+  {
+    "note": "alef with madda above",
+    "input": "آ",
+    "light": "آ",
+    "index": "ا"
+  },
+  {
+    "note": "alef wasla",
+    "input": "ٱ",
+    "light": "ٱ",
+    "index": "ا"
+  },
+  {
+    "note": "alef with wavy hamza above",
+    "input": "ٲ",
+    "light": "ٲ",
+    "index": "ا"
+  },
+  {
+    "note": "alef with wavy hamza below",
+    "input": "ٳ",
+    "light": "ٳ",
+    "index": "ا"
+  },
+  {
+    "note": "decomposed alef + combining maddah: NFC composes it to آ, which survives normalize_light",
+    "input": "آ",
+    "light": "آ",
+    "index": "ا"
+  },
+  {
+    "note": "decomposed alef + combining hamza above: NFC composes it to أ",
+    "input": "أ",
+    "light": "أ",
+    "index": "ا"
+  },
+  {
+    "note": "decomposed alef + combining hamza below: NFC composes it to إ",
+    "input": "إ",
+    "light": "إ",
+    "index": "ا"
+  },
+  {
+    "note": "decomposed waw + combining hamza above: NFC composes it to ؤ",
+    "input": "ؤ",
+    "light": "ؤ",
+    "index": "و"
+  },
+  {
+    "note": "decomposed yeh + combining hamza above: NFC composes it to ئ",
+    "input": "ئ",
+    "light": "ئ",
+    "index": "ي"
+  },
+  {
+    "note": "waw with hamza above folds to bare waw for the index",
+    "input": "ؤ",
+    "light": "ؤ",
+    "index": "و"
+  },
+  {
+    "note": "yeh with hamza above folds to bare yeh for the index",
+    "input": "ئ",
+    "light": "ئ",
+    "index": "ي"
+  },
+  {
+    "note": "ta marbuta folds to heh for the index only",
+    "input": "ة",
+    "light": "ة",
+    "index": "ه"
+  },
+  {
+    "note": "alef maqsura folds to yeh for the index only",
+    "input": "ى",
+    "light": "ى",
+    "index": "ي"
+  },
+  {
+    "note": "مكة -> مكه",
+    "input": "مكة",
+    "light": "مكة",
+    "index": "مكه"
+  },
+  {
+    "note": "موسى -> موسي",
+    "input": "موسى",
+    "light": "موسى",
+    "index": "موسي"
+  },
+  {
+    "note": "مؤمن -> مومن",
+    "input": "مؤمن",
+    "light": "مؤمن",
+    "index": "مومن"
+  },
+  {
+    "note": "قائم -> قايم",
+    "input": "قائم",
+    "light": "قائم",
+    "index": "قايم"
+  },
+  {
+    "note": "أُولَٰئِكَ: damma, fatha, dagger alif, kasra stripped; hamza carriers folded",
+    "input": "أُولَٰئِكَ",
+    "light": "أولئك",
+    "index": "اوليك"
+  },
+  {
+    "note": "Arabic-Indic digits U+0660..U+0669 survive normalize_light, become ASCII for the index",
+    "input": "٠١٢٣٤٥٦٧٨٩",
+    "light": "٠١٢٣٤٥٦٧٨٩",
+    "index": "0123456789"
+  },
+  {
+    "note": "extended Arabic-Indic digits U+06F0..U+06F9 (Persian/Urdu shapes) become ASCII for the index",
+    "input": "۰۱۲۳۴۵۶۷۸۹",
+    "light": "۰۱۲۳۴۵۶۷۸۹",
+    "index": "0123456789"
+  },
+  {
+    "note": "both Arabic-Indic digit ranges interleaved in one number",
+    "input": "٢۵٥",
+    "light": "٢۵٥",
+    "index": "255"
+  },
+  {
+    "note": "سورة ٢ -> سوره 2",
+    "input": "سورة ٢",
+    "light": "سورة ٢",
+    "index": "سوره 2"
+  },
+  {
+    "note": "leading, trailing and repeated spaces: normalize_light leaves them, the index collapses and strips",
+    "input": "  الحمد   لله  ",
+    "light": "  الحمد   لله  ",
+    "index": "الحمد لله"
+  },
+  {
+    "note": "tab, newline and CRLF all collapse to a single space for the index",
+    "input": "الحمد\tلله\nرب\r\nالعالمين",
+    "light": "الحمد\tلله\nرب\r\nالعالمين",
+    "index": "الحمد لله رب العالمين"
+  },
+  {
+    "note": "whitespace-only string collapses to empty for the index",
+    "input": "   \t\n  ",
+    "light": "   \t\n  ",
+    "index": ""
+  },
+  {
+    "note": "Latin text is untouched (no case folding in the spec)",
+    "input": "Hello World",
+    "light": "Hello World",
+    "index": "Hello World"
+  },
+  {
+    "note": "ASCII ayah reference is already canonical",
+    "input": "2:255",
+    "light": "2:255",
+    "index": "2:255"
+  },
+  {
+    "note": "ayah reference typed with Arabic-Indic digits",
+    "input": "٢:٢٥٥",
+    "light": "٢:٢٥٥",
+    "index": "2:255"
+  },
+  {
+    "note": "mixed Latin/Arabic/ASCII digits: آية -> ايه",
+    "input": "Surah 2 آية 255",
+    "light": "Surah 2 آية 255",
+    "index": "Surah 2 ايه 255"
+  },
+  {
+    "note": "mixed script with both Arabic-Indic digit ranges and punctuation",
+    "input": "page ٥٥ / صفحة ۷",
+    "light": "page ٥٥ / صفحة ۷",
+    "index": "page 55 / صفحه 7"
+  },
+  {
+    "note": "Basmala in Tanzil Uthmani form",
+    "input": "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
+    "light": "بسم ٱلله ٱلرحمن ٱلرحيم",
+    "index": "بسم الله الرحمن الرحيم"
+  },
+  {
+    "note": "Al-Fatiha 1:2 in Tanzil Uthmani form (dagger alif inside ٱلْعَٰلَمِينَ)",
+    "input": "ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَٰلَمِينَ",
+    "light": "ٱلحمد لله رب ٱلعلمين",
+    "index": "الحمد لله رب العلمين"
+  },
+  {
+    "note": "Ayat al-Kursi opening, exactly as Tanzil ships it (لَآ is alef + combining maddah before NFC)",
+    "input": "ٱللَّهُ لَآ إِلَٰهَ إِلَّا هُوَ",
+    "light": "ٱلله لآ إله إلا هو",
+    "index": "الله لا اله الا هو"
+  },
+  {
+    "note": "عِندَهُۥ: small waw U+06E5 plus a maddah that cannot compose onto it",
+    "input": "عِندَهُۥٓ",
+    "light": "عنده",
+    "index": "عنده"
+  },
+  {
+    "note": "هَٰٓؤُلَآءِ: maddah over a dagger alif survives NFC and is stripped as part of the harakat run",
+    "input": "هٰٓؤُلَآءِ",
+    "light": "هؤلآء",
+    "index": "هولاء"
+  },
+  {
+    "note": "يَـُٔودُهُۥ: hamza above riding a tatweel, which NFC cannot compose away",
+    "input": "يَـُٔودُهُۥ",
+    "light": "يوده",
+    "index": "يوده"
+  },
+  {
+    "note": "waqf mark U+06DA between spaces: normalize_light leaves a double space, the index collapses it",
+    "input": "عَلَيْهِمْ ۚ وَلَا",
+    "light": "عليهم  ولا",
+    "index": "عليهم ولا"
+  },
+  {
+    "note": "waqf mark U+06D6 after هُدًى",
+    "input": "هُدًى ۖ للمُتَّقِين",
+    "light": "هدى  للمتقين",
+    "index": "هدي للمتقين"
+  },
+  {
+    "note": "end-of-ayah mark U+06DD followed by an Arabic-Indic ayah number",
+    "input": "۝٢٥٥",
+    "light": "٢٥٥",
+    "index": "255"
+  },
+  {
+    "note": "sajdah sign U+06E9 attached to ٱسْجُدُوا",
+    "input": "ٱسْجُدُوا۩",
+    "light": "ٱسجدوا",
+    "index": "اسجدوا"
+  },
+  {
+    "note": "small high meem U+06E2 (iqlab) and a standalone hamza U+0621, which is never folded",
+    "input": "مِنۢ يَشَاءُ",
+    "light": "من يشاء",
+    "index": "من يشاء"
+  },
+  {
+    "note": "ta marbuta carrying fathatan",
+    "input": "رَحْمَةً",
+    "light": "رحمة",
+    "index": "رحمه"
+  },
+  {
+    "note": "عَلَىٰ: alef maqsura carrying a dagger alif",
+    "input": "عَلَىٰ",
+    "light": "على",
+    "index": "علي"
+  },
+  {
+    "note": "waw-hamza and ta marbuta folding in the same word",
+    "input": "مَسْؤُولَةٌ",
+    "light": "مسؤولة",
+    "index": "مسووله"
+  },
+  {
+    "note": "sun-letter assimilation shadda in ٱلشَّمْسِ",
+    "input": "ٱلشَّمْسِ",
+    "light": "ٱلشمس",
+    "index": "الشمس"
+  },
+  {
+    "note": "tatweel and fatha in the same word",
+    "input": "ســـلَام",
+    "light": "سلام",
+    "index": "سلام"
+  },
+  {
+    "note": "punctuation and quotation marks survive; U+06DF (small high rounded zero) does not",
+    "input": "قَالَ: «ٱدْخُلُوا۟»",
+    "light": "قال: «ٱدخلوا»",
+    "index": "قال: «ادخلوا»"
+  },
+  {
+    "note": "already-canonical text is a fixed point for both entry points",
+    "input": "الحمد لله رب العالمين",
+    "light": "الحمد لله رب العالمين",
+    "index": "الحمد لله رب العالمين"
+  },
+  {
+    "note": "alef with wavy hamza above inside a word",
+    "input": "ٲمَّة",
+    "light": "ٲمة",
+    "index": "امه"
+  },
+  {
+    "note": "alef with wavy hamza below inside a word",
+    "input": "ٳسْلَام",
+    "light": "ٳسلام",
+    "index": "اسلام"
+  },
+  {
+    "note": "multi-line reference block: folds happen before the whitespace collapse",
+    "input": "آية  ٢٥٥\n\nمِنْ  ٱلْبَقَرَة",
+    "light": "آية  ٢٥٥\n\nمن  ٱلبقرة",
+    "index": "ايه 255 من البقره"
+  },
+  {
+    "note": "surah name آل عمران",
+    "input": "آل عمران",
+    "light": "آل عمران",
+    "index": "ال عمران"
+  },
+  {
+    "note": "yeh-hamza, alef maqsura and ta marbuta collapsing onto two letters",
+    "input": "ئىة",
+    "light": "ئىة",
+    "index": "ييه"
+  },
+  {
+    "note": "standalone hamza U+0621 is not a carrier and is never folded",
+    "input": "ء",
+    "light": "ء",
+    "index": "ء"
+  }
+]

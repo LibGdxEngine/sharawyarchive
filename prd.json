@@ -21,7 +21,7 @@
       "id": "US-002",
       "title": "Arabic normalization module",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "backend/corpus/arabic.py exposes normalize_for_index(s) (all 8 spec steps) and normalize_light(s) (steps 1-3 only), both typed",
         "Steps exactly per spec: NFC; strip tatweel U+0640; strip harakat U+064B-U+0652, U+0670, U+06D6-U+06ED; hamza variants to bare alif; ta marbuta->ha, alif maqsura->ya, waw/ya hamza fold (index only); whitespace collapse; Arabic-Indic digits (both U+0660 and U+06F0 ranges) to ASCII",
@@ -33,7 +33,7 @@
       "id": "US-003",
       "title": "Data models: quran + corpus apps with pgvector",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Apps quran, corpus, search, clips, accounts created and in INSTALLED_APPS",
         "quran.models: Surah(number PK, name_ar, name_ar_plain, name_en, ayah_count, revelation_place, order_revealed), Ayah(surah FK, number, text_uthmani, text_imlaei, text_normalized, juz, hizb, page, sajda, unique(surah,number))",
@@ -47,7 +47,7 @@
       "id": "US-004",
       "title": "import_quran management command",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "python manage.py import_quran downloads/uses Tanzil uthmani + imlaei sources (cached under backend/quran/data/), populates Surah+Ayah with juz/page metadata, fills text_normalized via normalize_for_index",
         "After run: exactly 114 Surah rows and 6236 Ayah rows",
@@ -103,7 +103,7 @@
       "id": "US-008",
       "title": "Frontend foundation: RTL, fonts, audio store",
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Root layout has dir=\"rtl\" lang=\"ar\" on <html>; no per-component RTL hacks",
         "Two self-hosted fonts via next/font/local: a Uthmani face for ayah text and an Arabic UI face for everything else, with font-display strategy that avoids layout shift (size-adjust/fallback metrics)",
@@ -116,7 +116,7 @@
       "id": "US-009",
       "title": "Player screen /listen/[segmentId]",
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Word highlight driven by requestAnimationFrame loop with binary search over word start times (audio.currentTime*1000), early bail when index unchanged; unit test for the binary search",
         "Transcript virtualized with @tanstack/react-virtual; auto-scroll keeps active line ~40% viewport, disabled on user scroll with a 'back to current' affordance",
@@ -132,7 +132,7 @@
       "id": "US-010",
       "title": "Pages: landing, surah, search, topics",
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "/ is a search-first landing where the input is the hero",
         "/surah/[n] lists ayahs (Uthmani face) with segment entry points",

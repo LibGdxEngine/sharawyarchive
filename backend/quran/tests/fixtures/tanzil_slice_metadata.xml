@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Handcrafted slice of Tanzil's quran-data.xml, shaped like the real file but
+  covering only the first three suras (and only the first three ayahs of each).
+  The division markers are invented so the parser can be exercised without
+  loading 604 pages of real metadata.
+-->
+<quran type="metadata" version="1.0" copyright="(C) 2008-2009 Tanzil.info" license="cc-by">
+	<suras alias="chapters">
+		<sura index="1" ayas="3" start="0" name="الفاتحة" tname="Al-Faatiha" ename="The Opening" type="Meccan" order="5" rukus="1" />
+		<sura index="2" ayas="2" start="3" name="البقرة" tname="Al-Baqara" ename="The Cow" type="Medinan" order="87" rukus="40" />
+		<sura index="3" ayas="2" start="5" name="آل عمران" tname="Aal-i-Imraan" ename="The Family of Imraan" type="Medinan" order="89" rukus="20" />
+	</suras>
+	<juzs alias="parts">
+		<juz index="1" sura="1" aya="1" />
+		<juz index="2" sura="2" aya="2" />
+	</juzs>
+	<hizbs alias="groups">
+		<quarter index="1" sura="1" aya="1" />
+		<quarter index="2" sura="1" aya="3" />
+		<quarter index="3" sura="2" aya="2" />
+		<quarter index="4" sura="3" aya="2" />
+	</hizbs>
+	<manzils alias="stations">
+		<manzil index="1" sura="1" aya="1" />
+	</manzils>
+	<rukus alias="sections">
+		<ruku index="1" sura="1" aya="1" />
+		<ruku index="2" sura="2" aya="1" />
+	</rukus>
+	<pages>
+		<page index="1" sura="1" aya="1" />
+		<page index="2" sura="2" aya="1" />
+		<page index="3" sura="3" aya="1" />
+	</pages>
+	<sajdas>
+		<sajda index="1" sura="2" aya="2" type="recommended" />
+	</sajdas>
+</quran>

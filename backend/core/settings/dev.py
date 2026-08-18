@@ -1,5 +1,6 @@
-from .base import *
 from dotenv import load_dotenv
+
+from .base import *
 
 # Load dev environment file if available
 load_dotenv(os.path.join(BASE_DIR, '.env.dev'))

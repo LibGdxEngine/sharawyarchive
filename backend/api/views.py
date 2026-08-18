@@ -1,9 +1,11 @@
+import logging
+
+from django.core.cache import cache
+from django.db import connection
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.db import connection
-from django.core.cache import cache
+
 from .tasks import test_celery_task
-import logging
 
 logger = logging.getLogger(__name__)
 

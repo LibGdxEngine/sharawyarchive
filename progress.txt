@@ -8,3 +8,11 @@
   - Filename parser config-driven (parser_patterns.json) since sample filenames unavailable (user offline; plan asked to request 20 samples).
   - R2: endpoint https://6452da3166483560913682a6dd5a5b77.r2.cloudflarestorage.com bucket shaarawy via env keys; MinIO locally with same S3 client code.
 - PRD written: 16 stories US-001..US-016 mapping plan phases 0-10.
+
+## Backend core landed (US-002/003/004)
+- 70 hand-derived normalization fixtures; harakat strip widened to U+064B-U+0655 (combining maddah/hamza can't NFC-compose over dagger alif/tatweel in Uthmani text — 3204 occurrences); documented in arabic.py docstring.
+- Tanzil: outType=txt-2 (not txt) for numbered verses; sura-opening basmala detached from ayah 1 of 112 suras (suras 95/97 use idgham بِّسْمِ — matcher works at normalize_for_index level).
+- Data files cached in backend/quran/data/ with ATTRIBUTION.md.
+- pgvector HNSW index chunk_embedding_hnsw (m=16, ef_construction=64, cosine) confirmed in pg_indexes.
+- Shared modules owned by orchestrator (agents must NOT edit): core/settings/base.py additions, corpus/embeddings.py, corpus/storage.py.
+- Concurrent-agent hygiene: per-agent DB_NAME for pytest (pipeline_pg / search_pg), MEILI_INDEX_PREFIX for test isolation.

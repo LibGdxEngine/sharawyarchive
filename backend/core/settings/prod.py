@@ -1,5 +1,6 @@
-from .base import *
 import os
+
+from .base import *
 
 # Enforce secret key configuration in production
 SECRET_KEY = os.environ['SECRET_KEY']

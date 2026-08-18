@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,6 +21,11 @@ INSTALLED_APPS = [
     
     # Local apps
     'api.apps.ApiConfig',
+    'quran.apps.QuranConfig',
+    'corpus.apps.CorpusConfig',
+    'search.apps.SearchConfig',
+    'clips.apps.ClipsConfig',
+    'accounts.apps.AccountsConfig',
 ]
 
 MIDDLEWARE = [
@@ -119,7 +125,6 @@ SPECTACULAR_SETTINGS = {
 }
 
 # SimpleJWT configuration
-from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -127,7 +132,9 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': False,
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': os.environ.get('SECRET_KEY', 'django-insecure-dev-secret-key-template-project-1234'),
+    'SIGNING_KEY': os.environ.get(
+        'SECRET_KEY', 'django-insecure-dev-secret-key-template-project-1234'
+    ),
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 

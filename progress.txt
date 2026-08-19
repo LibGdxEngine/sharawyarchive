@@ -76,3 +76,7 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - 25MB cap: non-accepted/oversize inputs re-encoded to mono 32k MP3; longer audio split at silence midpoints (no overlap) and texts concatenated.
 - Retries on 429/5xx; prod compose/.env.prod default to cohere; DEPLOY.md updated. 15 mocked-SDK tests incl. e2e via driver.
 - Disk hit 100% mid-run (MinIO XMinioStorageFull): cleared npm cache (6GB) + docker build cache (15GB rebuildable); 6.5G free after.
+
+## Deslop pass (Ralph 7.5) + post-deslop regression (7.6)
+- Scans (frontend export refs, python cross-module defs): one true dead item — starter debug_task in core/celery.py, deleted. All other flags were typed public surface or in-module usage.
+- Post-deslop: ruff clean, backend 696, pipeline suite green; frontend untouched (109/tsc/lint/build green earlier same session).

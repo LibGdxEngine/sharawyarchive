@@ -17,11 +17,16 @@ Required values in `.env`:
   `NEXT_PUBLIC_API_URL` — your domain. `DOMAIN_NAME` is scheme-prefixed
   (`https://example.com`); `SITE_BASE_URL` and `NEXT_PUBLIC_SITE_URL` default to
   it, so set them only if the public origin differs.
-- `ASR_BACKEND=faster-whisper` and `EMBEDDING_BACKEND=e5` — **required.** Django's
+- `ASR_BACKEND=cohere` and `EMBEDDING_BACKEND=e5` — **required.** Django's
   built-in defaults are `stub`, and the stub engines *fabricate* transcript text
   and embeddings. A production stack left on `stub` silently fills the archive
   with invented speech attributed to the Sheikh. Keep `ALLOW_STUB_ENGINES` empty;
   set it to `true` only for a throwaway staging smoke test.
+- `CO_API_KEY` — Cohere API key for `ASR_BACKEND=cohere` (the default:
+  `cohere-transcribe-arabic-07-2026`, Arabic-specialized, hosted — no GPU needed
+  for transcription). `ASR_BACKEND=faster-whisper` is the offline/GPU
+  alternative. Word-level timings always come from the local CTC aligner
+  (`pipeline/requirements.txt`), whichever recognizer produces the text.
 - Behind Cloudflare's proxy set `SECURE_SSL_REDIRECT=False` (Cloudflare terminates TLS).
 
 ## 2. Start
@@ -44,13 +49,15 @@ Audio ingestion runs from a (GPU) worker host with `pipeline/requirements.txt`
 installed, pointed at this stack's Redis and Postgres:
 
 ```bash
-export ASR_BACKEND=faster-whisper EMBEDDING_BACKEND=e5   # never "stub" — see below
+export ASR_BACKEND=cohere CO_API_KEY=... EMBEDDING_BACKEND=e5   # never "stub" — see below
 celery -A pipeline.celery_app worker -Q pipeline   # long-running worker
 python -m pipeline.run --folder /data/mp3s --source-title "خواطر التلفزيون المصري" --kind khawatir
 ```
 
-**Production ingest must run with `ASR_BACKEND=faster-whisper`** (and
-`EMBEDDING_BACKEND=e5`). The `stub` backends exist for the test suite only: their
+**Production ingest must run with `ASR_BACKEND=cohere`** (hosted, default) or
+`faster-whisper` (local GPU), plus `EMBEDDING_BACKEND=e5`. As a backstop,
+`get_asr_engine()` itself refuses the stub without `ALLOW_STUB_ENGINES=true`,
+even on a worker that booted with dev settings. The `stub` backends exist for the test suite only: their
 output is *fabricated* text, not a transcription of the audio. Ingesting with
 them writes invented words into `Transcript` rows that the UI then presents as
 the Sheikh's speech. If you suspect a batch ran on stubs, delete those

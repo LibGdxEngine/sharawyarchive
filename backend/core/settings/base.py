@@ -195,6 +195,7 @@ AUDIO_URL_TTL_SECONDS = int(os.environ.get('AUDIO_URL_TTL_SECONDS', str(6 * 3600
 # Pluggable engines: 'stub' is deterministic and dependency-free (tests/dev);
 # real backends live in pipeline/ and are selected in worker environments.
 # core.settings.prod refuses to boot on either stub (core.engines_guard).
+# ASR_BACKEND: 'stub' | 'cohere' (hosted API, default in prod) | 'faster-whisper' (local GPU).
 EMBEDDING_BACKEND = os.environ.get('EMBEDDING_BACKEND', 'stub')
 ASR_BACKEND = os.environ.get('ASR_BACKEND', 'stub')
 

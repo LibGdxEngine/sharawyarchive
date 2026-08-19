@@ -109,5 +109,25 @@ def test_engine_selection_follows_the_asr_backend_setting(settings) -> None:  # 
     settings.ASR_BACKEND = "wav2vec-from-the-attic"
     with pytest.raises(ValueError, match="Unknown ASR_BACKEND"):
         get_asr_engine()
-    with pytest.raises(ValueError, match="Unknown ASR_BACKEND"):
+
+
+def test_aligner_selection_follows_its_own_env(settings, monkeypatch) -> None:  # noqa: ANN001
+    # Default pairing: any real recognizer gets the CTC aligner.
+    settings.ASR_BACKEND = "cohere"
+    monkeypatch.delenv("ALIGNER_BACKEND", raising=False)
+    assert isinstance(get_aligner(), CTCAligner)
+
+    # Explicit override wins (tests pair a mocked Cohere with the stub aligner).
+    monkeypatch.setenv("ALIGNER_BACKEND", "stub")
+    assert isinstance(get_aligner(), StubAligner)
+
+    monkeypatch.setenv("ALIGNER_BACKEND", "mfa-from-the-attic")
+    with pytest.raises(ValueError, match="Unknown ALIGNER_BACKEND"):
         get_aligner()
+
+
+def test_the_stub_recognizer_requires_an_explicit_opt_in(settings, monkeypatch) -> None:  # noqa: ANN001
+    settings.ASR_BACKEND = "stub"
+    monkeypatch.delenv("ALLOW_STUB_ENGINES", raising=False)
+    with pytest.raises(RuntimeError, match="fabricates"):
+        get_asr_engine()

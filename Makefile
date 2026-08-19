@@ -16,6 +16,7 @@ fe:
 
 test:
 	cd backend && DJANGO_SETTINGS_MODULE=core.settings.dev DB_HOST=localhost DB_PORT=5432 DB_NAME=postgres DB_USER=postgres DB_PASSWORD=postgres $(PY) -m pytest
+	cd pipeline && DB_HOST=localhost DB_PORT=5432 DB_NAME=pipeline_pg DB_USER=postgres DB_PASSWORD=postgres $(PY) -m pytest
 	cd frontend && npm run test -- --run
 
 lint:

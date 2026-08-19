@@ -26,6 +26,9 @@ _ENV_DEFAULTS = {
     "DB_NAME": "pipeline_pg",
     "DB_USER": "postgres",
     "DB_PASSWORD": "postgres",
+    # The stub recognizer fabricates text, so get_asr_engine() refuses it
+    # without this explicit opt-in; test data never ships.
+    "ALLOW_STUB_ENGINES": "true",
 }
 
 for _key, _value in _ENV_DEFAULTS.items():

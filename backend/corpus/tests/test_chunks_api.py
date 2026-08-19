@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from rest_framework.test import APIClient
 
-from api.cache import IMMUTABLE
+from api.cache import PUBLIC_SHORT
 from api.tests.factories import make_audio_asset
 from corpus.models import Chunk, Segment, SegmentKind, Source
 
@@ -24,7 +24,7 @@ def test_chunks_return_the_contract_shape(api: APIClient, passages: Passages) ->
     response = api.get(_url(passages.segment.pk))
 
     assert response.status_code == 200
-    assert response.headers['Cache-Control'] == IMMUTABLE
+    assert response.headers['Cache-Control'] == PUBLIC_SHORT
     body = response.json()
     assert len(body) == len(passages.chunks)
     (first, *_) = body

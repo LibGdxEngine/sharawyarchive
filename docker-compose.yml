@@ -144,8 +144,6 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost/api
       - NEXT_TELEMETRY_DISABLED=1
-      - NEXTAUTH_SECRET=a-secure-nextauth-secret-key-change-this-in-dev
-      - NEXTAUTH_URL=http://localhost
       - BACKEND_API_URL=http://backend:8000/api
     ports:
       - "3000:3000"

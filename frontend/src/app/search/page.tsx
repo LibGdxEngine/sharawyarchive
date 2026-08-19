@@ -78,7 +78,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                     </span>
                   </p>
                   <Link
-                    href={`/surah/${ayah.surah}`}
+                    href={`/surah/${ayah.surah}?ayah=${ayah.number}#ayah-${ayah.number}`}
                     className="mt-1 inline-block text-xs text-[var(--color-ink-muted)]"
                   >
                     سورة {ayah.surah_name_ar}

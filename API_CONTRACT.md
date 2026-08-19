@@ -75,10 +75,11 @@ search 30/min anon; corrections 10/hour; clips 5/hour → 429 with `Retry-After`
    `[{ "chunk_id": 9, "start_ms": 0, "end_ms": 25000, "word_start": 0, "word_end": 41 }]`
    ordered by chunk idx; `word_start`/`word_end` are inclusive transcript-wide
    `TranscriptWord.idx` values and are `null` for a chunk whose span holds no words.
-   Immutable cache headers (content changes only with transcript version).
+   `Cache-Control: public, max-age=300` (the URL carries no version and an
+   approved correction can renumber word indices).
 2. **Search pagination**: `page` is capped at 100 (400 beyond); for `semantic`
-   and `hybrid` modes `total` is the size of the fused candidate pool (≤100),
-   not a corpus-wide count.
+   and `hybrid` modes `total` is the size of the fused candidate pool (≤ page·page_size,
+   at most 1000), not a corpus-wide count.
 3. **Clips**: there is deliberately no public `GET /api/clips/` listing; the
    pair is `POST /api/clips/` + `GET /api/clips/{id}/`. `POST` returns 200 with
    the existing clip (any status) on a cache hit, 202 on first creation.

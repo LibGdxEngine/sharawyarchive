@@ -47,7 +47,7 @@ def check_engines(env: Mapping[str, str]) -> None:
         f"{' and '.join(stubbed)} would run on the {STUB!r} engine in production. "
         "The stub engines fabricate output, and indexing invented speech as the "
         "Sheikh's words is the one thing this archive must never do. Set "
-        "ASR_BACKEND=faster-whisper and EMBEDDING_BACKEND=e5 (or another real "
+        "ASR_BACKEND=cohere (or faster-whisper) and EMBEDDING_BACKEND=e5 (or another real "
         f"backend), or set {ALLOW_VAR}=true if this deployment really is a "
         "model-free staging box."
     )

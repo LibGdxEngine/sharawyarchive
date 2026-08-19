@@ -95,18 +95,21 @@ class SegmentTranscriptView(ImmutableCacheMixin, APIView):
         )
 
 
-class SegmentChunksView(ImmutableCacheMixin, APIView):
+class SegmentChunksView(CacheControlMixin, APIView):
     """``GET /api/segments/{id}/chunks/`` — passage spans and their word ranges.
 
     The client already has the word array from ``/transcript/``; this says
     which passage each word belongs to, which is what a correction has to name
-    when it is submitted. Content-addressed like the transcript itself: the
-    spans only move when an approved correction bumps ``Transcript.version``.
+    when it is submitted. Short-lived cache, NOT immutable: the URL carries no
+    transcript version, and an approved correction can renumber word indices —
+    a year-old chunk map would target the wrong words.
 
     Assembled from two ``values_list`` queries rather than through the
     serializer, for the reason ``SegmentTranscriptView`` gives — the payload is
     mechanical and a transcript can carry thousands of words.
     """
+
+    cache_control = PUBLIC_SHORT
 
     @extend_schema(
         operation_id='segment_chunks_list', responses=ChunkSpanSerializer(many=True)
@@ -134,8 +137,11 @@ class SegmentChunksView(ImmutableCacheMixin, APIView):
         return Response(rows)
 
 
-class SegmentRelatedView(ImmutableCacheMixin, APIView):
+class SegmentRelatedView(CacheControlMixin, APIView):
     """``GET /api/segments/{id}/related/`` — nearest passages elsewhere.
+
+    Short-lived public cache, never immutable: every newly embedded segment
+    changes this corpus-wide result.
 
     The segment is reduced to the centroid of its chunk embeddings, and the
     corpus is searched by cosine distance to that centroid with the segment's
@@ -143,6 +149,8 @@ class SegmentRelatedView(ImmutableCacheMixin, APIView):
     no renormalization. A segment that has not been embedded yet returns ``[]``
     rather than an error — embedding lags ingestion.
     """
+
+    cache_control = PUBLIC_SHORT
 
     @extend_schema(
         operation_id='segment_related_list', responses=ChunkResultSerializer(many=True)

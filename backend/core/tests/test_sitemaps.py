@@ -170,8 +170,8 @@ def test_sitemap_quran_ayah_urls(surah_fixture, ayah_fixture):
     resp = sitemap_quran(req)
     root = ET.fromstring(resp.content)
     locs = [el.text for el in root.findall("sm:url/sm:loc", NS)]
-    assert f"{SITE_BASE_URL}/surah/1?ayah=1" in locs
-    assert f"{SITE_BASE_URL}/surah/2?ayah=1" in locs
+    assert f"{SITE_BASE_URL}/surah/1?ayah=1#ayah-1" in locs
+    assert f"{SITE_BASE_URL}/surah/2?ayah=1#ayah-1" in locs
 
 
 @override_settings(SITE_BASE_URL=SITE_BASE_URL)

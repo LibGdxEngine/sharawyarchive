@@ -111,7 +111,7 @@ def sitemap_quran(request: HttpRequest) -> HttpResponse:
         .iterator()
     ):
         body += _url_entry(
-            f"{base}/surah/{ayah.surah_id}?ayah={ayah.number}",
+            f"{base}/surah/{ayah.surah_id}?ayah={ayah.number}#ayah-{ayah.number}",
             changefreq="monthly",
         )
 

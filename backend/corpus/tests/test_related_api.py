@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from rest_framework.test import APIClient
 
-from api.cache import IMMUTABLE
+from api.cache import PUBLIC_SHORT
 from api.tests.factories import Archive, embed, make_audio_asset, make_segment, make_transcript
 from corpus.models import Chunk
 from corpus.views import RELATED_LIMIT
@@ -34,7 +34,7 @@ def test_related_returns_the_search_result_shape(
     response = api.get(f'/api/segments/{embedded_archive.segment.pk}/related/')
 
     assert response.status_code == 200
-    assert response.headers['Cache-Control'] == IMMUTABLE
+    assert response.headers['Cache-Control'] == PUBLIC_SHORT
     body = response.json()
     assert len(body) == len(embedded_archive.other_chunks)
     (first, *_) = body

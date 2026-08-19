@@ -269,6 +269,172 @@ class FasterWhisperASR:
         return words
 
 
+class CohereASR:
+    """Cohere's hosted transcription API (``POST /v2/audio/transcriptions``).
+
+    Defaults to ``cohere-transcribe-arabic-07-2026`` — the Arabic-specialized
+    release (MSA + dialects incl. Egyptian, Arabic/English code-switching),
+    newer than the general ``cohere-transcribe-03-2026``.
+
+    The API returns plain text with **no word-level timestamps**, so the
+    ``ASRWord`` timings produced here are even placeholders from
+    :func:`_even_timings` (exactly like ``StubASR``'s sidecar-text path); the
+    ``align`` stage derives the real millisecond spans acoustically with
+    :class:`CTCAligner` (``needs_words = False``, so Cohere is called once per
+    segment). Auth comes from the ``CO_API_KEY`` env var, which the SDK reads.
+
+    Uploads are capped at 25MB and the accepted containers do not include our
+    Opus master, so inputs are re-encoded to mono 32k MP3 when needed and
+    audio past the cap is split at detected silences (no overlap — cutting in
+    silence keeps plain text concatenation faithful).
+    """
+
+    name = "cohere-transcribe"
+
+    ACCEPTED_SUFFIXES = frozenset({".flac", ".mp3", ".mpeg", ".mpga", ".ogg", ".wav"})
+    RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+    MAX_ATTEMPTS = 3
+
+    def __init__(self) -> None:
+        self.model_name = os.environ.get("COHERE_ASR_MODEL", "cohere-transcribe-arabic-07-2026")
+        self.language = os.environ.get("COHERE_ASR_LANGUAGE", "ar")
+        self.max_upload_bytes = int(
+            os.environ.get("COHERE_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))
+        )
+        self.version = self.model_name
+        self._client = None
+
+    def _load(self):  # noqa: ANN202 - cohere client only exists in workers
+        if self._client is None:
+            if not os.environ.get("CO_API_KEY"):
+                raise RuntimeError(
+                    "ASR_BACKEND='cohere' needs the CO_API_KEY environment variable "
+                    "(create a key at https://dashboard.cohere.com)"
+                )
+            try:
+                import cohere
+            except ImportError as exc:  # pragma: no cover - depends on the image
+                raise MissingEngineDependency(
+                    "ASR_BACKEND='cohere' needs the cohere SDK: "
+                    "pip install -r pipeline/requirements.txt"
+                ) from exc
+            self._client = cohere.ClientV2()
+        return self._client
+
+    def transcribe(self, audio_path: str, *, duration_ms: int) -> list[ASRWord]:
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="cohere-asr-") as tmpdir:
+            parts = self._prepare_upload(audio_path, tmpdir, duration_ms=duration_ms)
+            text = " ".join(self._transcribe_file(part) for part in parts).strip()
+
+        texts = text.split()
+        if not texts:
+            return []
+        spans = _even_timings(len(texts), duration_ms)
+        return [
+            ASRWord(text=text, start_ms=start, end_ms=end, confidence=None)
+            for text, (start, end) in zip(texts, spans, strict=True)
+        ]
+
+    # -- upload preparation -------------------------------------------------- #
+
+    def _prepare_upload(self, audio_path: str, tmpdir: str, *, duration_ms: int) -> list[str]:
+        path = Path(audio_path)
+        if (
+            path.suffix.lower() in self.ACCEPTED_SUFFIXES
+            and path.stat().st_size <= self.max_upload_bytes
+        ):
+            return [audio_path]
+
+        encoded = self._encode(audio_path, Path(tmpdir) / "upload.mp3")
+        if encoded.stat().st_size <= self.max_upload_bytes:
+            return [str(encoded)]
+        return self._split(audio_path, tmpdir, encoded, duration_ms=duration_ms)
+
+    def _encode(
+        self,
+        audio_path: str,
+        target: Path,
+        *,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
+    ) -> Path:
+        import subprocess
+
+        command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+        if start_ms is not None:
+            command += ["-ss", f"{start_ms / 1000:.3f}"]
+        if end_ms is not None:
+            command += ["-to", f"{end_ms / 1000:.3f}"]
+        command += ["-i", audio_path, "-ac", "1", "-c:a", "libmp3lame", "-b:a", "32k", str(target)]
+        subprocess.run(command, check=True, capture_output=True)
+        return target
+
+    def _split(
+        self, audio_path: str, tmpdir: str, encoded: Path, *, duration_ms: int
+    ) -> list[str]:
+        part_count = -(-encoded.stat().st_size // self.max_upload_bytes)  # ceil
+        boundaries = self._cut_points(audio_path, duration_ms, part_count)
+        parts: list[str] = []
+        for index, (start_ms, end_ms) in enumerate(
+            zip([0, *boundaries], [*boundaries, duration_ms], strict=True)
+        ):
+            target = Path(tmpdir) / f"part-{index:03d}.mp3"
+            parts.append(str(self._encode(audio_path, target, start_ms=start_ms, end_ms=end_ms)))
+        return parts
+
+    def _cut_points(self, audio_path: str, duration_ms: int, part_count: int) -> list[int]:
+        """Ideal equal-split boundaries, each snapped to the nearest detected
+        silence midpoint within ±30s so no word is cut in half."""
+        ideal = [duration_ms * index // part_count for index in range(1, part_count)]
+        silences = self._silence_midpoints(audio_path)
+        cuts = []
+        for target in ideal:
+            near = [s for s in silences if abs(s - target) <= 30_000]
+            cuts.append(min(near, key=lambda s: abs(s - target)) if near else target)
+        return cuts
+
+    @staticmethod
+    def _silence_midpoints(audio_path: str) -> list[int]:
+        import re
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-i", audio_path,
+                "-af", "silencedetect=noise=-35dB:d=0.4", "-f", "null", "-",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        starts = [float(m) for m in re.findall(r"silence_start: ([\d.]+)", result.stderr)]
+        ends = [float(m) for m in re.findall(r"silence_end: ([\d.]+)", result.stderr)]
+        return [
+            int(round((start + end) / 2 * 1000)) for start, end in zip(starts, ends, strict=False)
+        ]
+
+    # -- API call ------------------------------------------------------------ #
+
+    def _transcribe_file(self, path: str) -> str:
+        import time
+
+        client = self._load()
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:
+                with open(path, "rb") as handle:
+                    response = client.audio.transcriptions.create(
+                        model=self.model_name, language=self.language, file=handle
+                    )
+                return str(response.text)
+            except Exception as exc:
+                status = getattr(exc, "status_code", None)
+                if status in self.RETRYABLE_STATUS and attempt < self.MAX_ATTEMPTS:
+                    time.sleep(2**attempt)
+                    continue
+                raise
+
+
 class CTCAligner:
     """Forced alignment with ctc-forced-aligner: audio + text in, word spans out.
 
@@ -306,7 +472,7 @@ class CTCAligner:
             )
         except ImportError as exc:  # pragma: no cover - depends on the image
             raise MissingEngineDependency(
-                "ASR_BACKEND='faster-whisper' alignment needs ctc-forced-aligner: "
+                "The CTC aligner needs ctc-forced-aligner: "
                 "pip install -r pipeline/requirements.txt"
             ) from exc
 
@@ -329,20 +495,42 @@ class CTCAligner:
 
 
 def get_asr_engine() -> ASREngine:
-    """The ASR engine named by ``settings.ASR_BACKEND``."""
+    """The ASR engine named by ``settings.ASR_BACKEND``.
+
+    The stub recognizer FABRICATES text, and this factory is the one gate every
+    ingest path goes through — the prod-settings guard cannot see a worker that
+    booted with dev settings, so the stub is refused here too unless the run
+    opts in with ``ALLOW_STUB_ENGINES=true`` (tests and dev smoke only).
+    """
     backend = getattr(settings, "ASR_BACKEND", "stub")
     if backend == "stub":
+        if os.environ.get("ALLOW_STUB_ENGINES", "").strip().lower() != "true":
+            raise RuntimeError(
+                "ASR_BACKEND='stub' fabricates transcript text; refusing to transcribe. "
+                "Set ASR_BACKEND=cohere (or faster-whisper), or ALLOW_STUB_ENGINES=true "
+                "for a test/dev run whose data never ships."
+            )
         return StubASR()
     if backend == "faster-whisper":
         return FasterWhisperASR()
+    if backend == "cohere":
+        return CohereASR()
     raise ValueError(f"Unknown ASR_BACKEND: {backend!r}")
 
 
 def get_aligner() -> Aligner:
-    """The aligner that pairs with ``settings.ASR_BACKEND``."""
-    backend = getattr(settings, "ASR_BACKEND", "stub")
+    """The aligner named by ``ALIGNER_BACKEND``, defaulting to the ASR pairing.
+
+    Any real ASR backend pairs with the CTC forced aligner: it re-derives word
+    timings acoustically (``needs_words = False``), which also means an
+    API-backed recognizer like Cohere is only called once per segment. Pairing
+    a ``needs_words`` aligner with ``cohere`` would re-call the API in the
+    align stage — acceptable only in tests where the client is mocked.
+    """
+    asr = getattr(settings, "ASR_BACKEND", "stub")
+    backend = os.environ.get("ALIGNER_BACKEND") or ("stub" if asr == "stub" else "ctc")
     if backend == "stub":
         return StubAligner()
-    if backend == "faster-whisper":
+    if backend == "ctc":
         return CTCAligner()
-    raise ValueError(f"Unknown ASR_BACKEND: {backend!r}")
+    raise ValueError(f"Unknown ALIGNER_BACKEND: {backend!r}")

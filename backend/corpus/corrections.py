@@ -197,10 +197,12 @@ def _replace_words(
 ) -> None:
     """Swap ``old_words`` for ``new_texts`` over the span the old ones covered."""
     if len(new_texts) == len(old_words):
-        # Equal counts: the alignment still holds, so only the text changes.
+        # Equal counts: the alignment still holds, so timings stay — but the
+        # recogniser's confidence does not describe text a human wrote.
         for word, text in zip(old_words, new_texts, strict=True):
             word.text = text[:MAX_WORD_CHARS]
-        TranscriptWord.objects.bulk_update(old_words, ["text"])
+            word.confidence = None
+        TranscriptWord.objects.bulk_update(old_words, ["text", "confidence"])
         return
 
     start_ms, end_ms = int(old_words[0].start_ms), int(old_words[-1].end_ms)

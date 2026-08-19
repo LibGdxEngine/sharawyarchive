@@ -76,10 +76,13 @@ services:
       # scheme (see .env.prod), so it is usable as a base URL as-is.
       - SITE_BASE_URL=${SITE_BASE_URL:-${DOMAIN_NAME:-http://localhost}}
       # Real engines. The "stub" defaults in core/settings/base.py fabricate
-      # speech and must never reach production data.
-      - ASR_BACKEND=${ASR_BACKEND:-faster-whisper}
+      # speech and must never reach production data. 'cohere' transcribes via
+      # Cohere's hosted API; word timings come from the local CTC aligner.
+      - ASR_BACKEND=${ASR_BACKEND:-cohere}
       - EMBEDDING_BACKEND=${EMBEDDING_BACKEND:-e5}
       - ALLOW_STUB_ENGINES=${ALLOW_STUB_ENGINES:-}
+      - CO_API_KEY=${CO_API_KEY:-}
+      - COHERE_ASR_MODEL=${COHERE_ASR_MODEL:-cohere-transcribe-arabic-07-2026}
     depends_on:
       db:
         condition: service_healthy

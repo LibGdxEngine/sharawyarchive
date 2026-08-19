@@ -85,6 +85,8 @@ def test_an_equal_count_replacement_keeps_every_timing(passages: Passages) -> No
 
     assert _texts(passages)[12:15] == ["قلوب", "المسلمين", "ضياء"]
     assert _timings(passages) == before
+    # A human wrote these words: no recogniser confidence may survive on them.
+    assert all(word.confidence is None for word in passages.words()[12:15])
 
 
 def test_a_shorter_replacement_redistributes_and_renumbers(passages: Passages) -> None:

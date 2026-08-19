@@ -3,7 +3,7 @@
 # NOT installed in the dev virtualenv and NOT installed in the Django image:
 # the whole point of keeping pipeline/ outside backend/ is that the web
 # container never pulls torch. Install these only where ASR_BACKEND is set to
-# 'faster-whisper' or EMBEDDING_BACKEND to 'e5'.
+# 'cohere'/'faster-whisper' or EMBEDDING_BACKEND to 'e5'.
 #
 #   pip install -r pipeline/requirements.txt
 #
@@ -13,7 +13,11 @@
 # Django ORM, celery, boto3, psycopg, numpy: the pipeline writes corpus rows.
 -r ../backend/requirements.txt
 
-# ASR: Whisper large-v3 through CTranslate2.
+# ASR via Cohere's hosted transcription API (ASR_BACKEND='cohere'; needs CO_API_KEY).
+# Light pure-python SDK — the heavy deps below are only for local engines.
+cohere>=5.15
+
+# ASR: Whisper large-v3 through CTranslate2 (ASR_BACKEND='faster-whisper').
 faster-whisper>=1.0.0
 
 # Forced alignment: MMS-300m CTC aligner (pulls torch/torchaudio).

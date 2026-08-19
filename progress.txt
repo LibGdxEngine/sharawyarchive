@@ -64,3 +64,15 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - B6/B8: documented above. B7: Caddy routes sitemaps to Django; SITE_BASE_URL wired; per-ayah metadata + canonical + anchors; surah fan-out replaced by inlined segments (1 query). B10/B12: honest pipeline failure test, run_pipeline tests, related rail in player UI, storage-key test made real, clips contract descoped in prd.
 - Should-fixes: Redis throttle cache + NUM_PROXIES + client_ip, search page cap 100, JSON log timestamps, corrections POST range validation, --rebuild preserves published topics, clip retry race, admin play range #t=s,e, CLIP_ATTRIBUTION from env, JWT/demo cruft + db.sqlite3 removed, models.ts nullable drift fixed, keyboard survives word clicks, font fallback metrics, topic chunk cap.
 - Final regression: backend 696 (fresh DB, twice), pipeline 55, frontend 109 + build, make lint green. Live smoke: search 9 results, segment cache private/300, page=500000 -> 400, sitemap index serves.
+
+## Architect re-review: APPROVED (zero blocking). Should-fixes applied same session:
+- S1: get_asr_engine() refuses the fabricating stub without ALLOW_STUB_ENGINES=true (guards workers booted with dev settings); tests/dev opt in explicitly.
+- S2/S3: /segments/{id}/chunks/ and /related/ dropped from immutable to public max-age=300 (no version in URL / corpus-wide result); contract amended.
+- S4: equal-count correction approval nulls recogniser confidence on human-written words (+ regression assertion).
+- Notes: sitemap ayah URLs carry #ayah-N, search ayah matches link per-ayah, make test runs the pipeline suite, contract total wording fixed, NextAuth dev-config remnants removed.
+
+## Cohere Transcribe engine (user-approved plan)
+- ASR_BACKEND='cohere': CohereASR calls POST /v2/audio/transcriptions (ClientV2, CO_API_KEY), default model cohere-transcribe-arabic-07-2026 (latest; Arabic dialects + code-switching). API has NO word timestamps → placeholder even timings; real ms spans from CTCAligner (ALIGNER_BACKEND decoupled: real ASR pairs with 'ctc' by default, one API call/segment).
+- 25MB cap: non-accepted/oversize inputs re-encoded to mono 32k MP3; longer audio split at silence midpoints (no overlap) and texts concatenated.
+- Retries on 429/5xx; prod compose/.env.prod default to cohere; DEPLOY.md updated. 15 mocked-SDK tests incl. e2e via driver.
+- Disk hit 100% mid-run (MinIO XMinioStorageFull): cleared npm cache (6GB) + docker build cache (15GB rebuildable); 6.5G free after.

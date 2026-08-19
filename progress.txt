@@ -80,3 +80,8 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 ## Deslop pass (Ralph 7.5) + post-deslop regression (7.6)
 - Scans (frontend export refs, python cross-module defs): one true dead item — starter debug_task in core/celery.py, deleted. All other flags were typed public surface or in-module usage.
 - Post-deslop: ruff clean, backend 696, pipeline suite green; frontend untouched (109/tsc/lint/build green earlier same session).
+
+## Cohere API live validation (real corpus)
+- CO_API_KEY stored in gitignored .env.local (chmod 600), never committed.
+- Live smoke on data/CD-1/001 alfat7a/001_002_002.mp3 (112s) with cohere-transcribe-arabic-07-2026: 141 words of genuine Sha'rawy tafseer on the divine names in the basmala — correct style, correct content, one visible slip (الحمل/الحمد) at expected WER level.
+- Full-corpus transcode ingest running concurrently (--until transcode); torch+ctc-forced-aligner installing for word timings; surah-1 checkpoint next (--until chunk; embed/index deferred until disk/R2 allows e5).

@@ -74,7 +74,8 @@ export interface Segment {
   audio_url: string;
   waveform_url: string;
   source: Source;
-  transcript_version: number;
+  /** Null until the segment has been transcribed. */
+  transcript_version: number | null;
   is_human_reviewed: boolean;
 }
 

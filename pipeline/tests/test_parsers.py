@@ -16,6 +16,28 @@ from .conftest import REPO_ROOT
 # One case per entry in parser_patterns.json, plus the variants each accepts.
 CASES: list[tuple[str, ParseResult]] = [
     (
+        # The 11-CD tafseer collection in data/: SSS_AAA_BBB.
+        "041_034_035.mp3",
+        ParseResult(
+            surah=41,
+            ayah_start=34,
+            ayah_end=35,
+            kind="khawatir",
+            pattern_name="cd_surah_ayah_range",
+        ),
+    ),
+    (
+        # Its one anomaly: a dash between the ayah bounds.
+        "038_065-068.mp3",
+        ParseResult(
+            surah=38,
+            ayah_start=65,
+            ayah_end=68,
+            kind="khawatir",
+            pattern_name="cd_surah_ayah_range",
+        ),
+    ),
+    (
         "khawatir_002_015.mp3",
         ParseResult(surah=2, ordinal=15, kind="khawatir", pattern_name="khawatir_surah_ordinal"),
     ),

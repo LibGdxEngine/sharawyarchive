@@ -13,6 +13,13 @@
   ],
   "patterns": [
     {
+      "name": "cd_surah_ayah_range",
+      "description": "041_034_035, 038_065-068 (the 11-CD tafseer collection in data/)",
+      "regex": "^(?P<surah>\\d{1,3})_(?P<ayah_start>\\d{1,3})[_-](?P<ayah_end>\\d{1,3})$",
+      "kind": "khawatir",
+      "enabled": true
+    },
+    {
       "name": "khawatir_surah_ordinal",
       "description": "khawatir_002_015, khawatir-002, khawatir 002 15 - title",
       "regex": "^khawatir[ _-]+(?P<surah>\\d{1,3})(?:[ _-]+(?P<ordinal>\\d{1,4}))?(?:[ _-].*)?$",

@@ -286,6 +286,28 @@ def waveform_peaks(path: Path | str, buckets: int = WAVEFORM_BUCKETS) -> list[fl
 # --------------------------------------------------------------------------- #
 
 
+def _segment_title(path: Path, parsed: ParseResult, kind: str) -> str:
+    """A human title from the parsed reference, falling back to the filename.
+
+    ``تفسير سورة البقرة — الآيات 15–20`` reads in every list the segment
+    appears in (surah page, search, player bar); the raw stem only when the
+    surah is unknown or not yet imported.
+    """
+    if parsed.surah is not None and _segment_surah_id(parsed.surah) is not None:
+        from quran.models import Surah
+
+        name_ar = Surah.objects.get(number=parsed.surah).name_ar
+        prefix = "تفسير" if kind == SegmentKind.KHAWATIR else "تلاوة"
+        title = f"{prefix} سورة {name_ar}"
+        if parsed.ayah_start is not None:
+            if parsed.ayah_end is not None and parsed.ayah_end != parsed.ayah_start:
+                title += f" — الآيات {parsed.ayah_start}–{parsed.ayah_end}"
+            else:
+                title += f" — الآية {parsed.ayah_start}"
+        return title[:255]
+    return path.stem[:255]
+
+
 def _segment_surah_id(surah: int | None) -> int | None:
     """The FK value, but only when that surah has actually been imported.
 
@@ -331,7 +353,7 @@ def _ingest_one(
         audio=asset,
         ordinal=parsed.ordinal or 0,
         duration_ms=duration_ms,
-        title=path.stem[:255],
+        title=_segment_title(path, parsed, kind),
         status=SegmentStatus.PENDING,
     )
     PipelineRun.objects.create(
@@ -456,7 +478,7 @@ def _transcode(segment: Segment, local_path: str) -> str:
                 "-c:a",
                 "libopus",
                 "-b:a",
-                "32k",
+                os.environ.get("AUDIO_OPUS_BITRATE", "32k"),
                 "-ac",
                 "1",
                 str(opus_path),

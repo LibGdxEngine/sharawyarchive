@@ -11,3 +11,4 @@ backend/media/
 .DS_Store
 frontend/public/sw.js
 frontend/public/sw.js.map
+data/

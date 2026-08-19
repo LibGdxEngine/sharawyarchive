@@ -95,7 +95,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           </h2>
           <ChunkResultList
             results={response.results}
-            emptyLabel="لا توجد مقاطع مطابقة لهذه العبارة."
+            emptyLabel="لا توجد مقاطع مطابقة لهذه العبارة — البحث في نص التفسير يتوسع تدريجيًا مع اكتمال التفريغ الآلي للمقاطع."
           />
         </section>
       </main>

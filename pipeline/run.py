@@ -40,8 +40,20 @@ class Summary:
         return f"processed {self.processed}, skipped {self.skipped}, failed {self.failed}"
 
 
-def process_segment(segment_id: int, local_path: str) -> tuple[str, list[str]]:
-    """Run every stage for one segment. Returns its outcome and stage notes."""
+STAGE_ORDER = ("transcode", "transcribe", "align", "chunk", "embed", "index")
+
+
+def process_segment(
+    segment_id: int, local_path: str, until: str = "index"
+) -> tuple[str, list[str]]:
+    """Run the stages up to and including ``until`` for one segment.
+
+    ``until="transcode"`` is the audio-first ingest: segments stay ``pending``
+    with playable Opus + waveform in storage, and a later run (with a real ASR
+    engine configured) picks them up from the transcribe stage.
+    """
+    if until not in STAGE_ORDER:
+        raise ValueError(f"until must be one of {STAGE_ORDER}, got {until!r}")
     steps = (
         ("transcode", lambda: stages.do_transcode(segment_id, local_path)),
         ("transcribe", lambda: stages.do_transcribe(segment_id, local_path)),
@@ -49,7 +61,7 @@ def process_segment(segment_id: int, local_path: str) -> tuple[str, list[str]]:
         ("chunk", lambda: stages.do_chunk(segment_id)),
         ("embed", lambda: stages.do_embed(segment_id)),
         ("index", lambda: stages.do_index_segment(segment_id)),
-    )
+    )[: STAGE_ORDER.index(until) + 1]
     notes: list[str] = []
     all_skipped = True
     for name, call in steps:
@@ -68,6 +80,7 @@ def run_folder(
     kind: str,
     limit: int | None = None,
     surah: int | None = None,
+    until: str = "index",
     stdout: TextIO = sys.stdout,
 ) -> Summary:
     """Ingest ``folder`` and drive every segment through the remaining stages."""
@@ -76,7 +89,7 @@ def run_folder(
 
     summary = Summary()
     for position, item in enumerate(files, start=1):
-        outcome, notes = process_segment(item.segment_id, item.local_path)
+        outcome, notes = process_segment(item.segment_id, item.local_path, until=until)
         summary.record(outcome)
         name = item.local_path.rsplit("/", 1)[-1]
         print(
@@ -104,6 +117,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="Stop after N files.")
     parser.add_argument("--surah", type=int, default=None, help="Only files parsed as this surah.")
     parser.add_argument(
+        "--until",
+        default="index",
+        choices=list(STAGE_ORDER),
+        help=(
+            "Stop after this stage (default: index, the full pipeline). "
+            "'transcode' = audio-first ingest: playable now, transcribed later."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print how the filenames parse and exit. Touches neither database nor storage.",
@@ -119,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         kind=args.kind,
         limit=args.limit,
         surah=args.surah,
+        until=args.until,
     )
     return 1 if summary.failed else 0
 

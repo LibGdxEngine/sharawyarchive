@@ -14,7 +14,8 @@ import type { Segment, Transcript } from "@/types/models";
 
 interface PlayerProps {
   segment: Segment;
-  transcript: Transcript;
+  /** Null when the segment has not been transcribed yet. */
+  transcript: Transcript | null;
   /** Deep-link position from `?t=`, or null when absent. */
   startMs: number | null;
 }
@@ -98,34 +99,48 @@ export default function Player({ segment, transcript, startMs }: PlayerProps) {
         </h1>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <ShareButton segmentId={segment.id} />
-          <ClipComposer key={segment.id} segment={segment} />
+          {/* Clip karaoke and offline saving both need transcript words. */}
+          {transcript !== null ? (
+            <ClipComposer key={segment.id} segment={segment} />
+          ) : null}
           <span className="text-xs text-[var(--color-ink-faint)]">
             {segment.source.title}
           </span>
         </div>
       </header>
 
-      <div className="mb-4 border-y border-[var(--color-border-subtle)] py-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
-            النص مُفرَّغ آليًا وقد يحتوي على أخطاء — نص القرآن الكريم ليس من
-            التفريغ الآلي
-            {transcript.is_human_reviewed ? (
-              <span className="mx-2 inline-block rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-ink-faint)]">
-                مُراجَع
-              </span>
-            ) : null}
+      {transcript !== null ? (
+        <>
+          <div className="mb-4 border-y border-[var(--color-border-subtle)] py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
+                النص مُفرَّغ آليًا وقد يحتوي على أخطاء — نص القرآن الكريم ليس من
+                التفريغ الآلي
+                {transcript.is_human_reviewed ? (
+                  <span className="mx-2 inline-block rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-ink-faint)]">
+                    مُراجَع
+                  </span>
+                ) : null}
+              </p>
+              <OfflineButton key={segment.id} segment={segment} />
+            </div>
+          </div>
+
+          <TranscriptView segmentId={segment.id} words={transcript.words} />
+
+          <p className="mt-6 text-xs text-[var(--color-ink-faint)]">
+            عدد الكلمات {transcript.words.length} · إصدار التفريغ{" "}
+            {transcript.version} · {transcript.engine}
           </p>
-          <OfflineButton key={segment.id} segment={segment} />
+        </>
+      ) : (
+        <div className="mb-4 border-y border-[var(--color-border-subtle)] py-6">
+          <p className="text-sm leading-relaxed text-[var(--color-ink-muted)]">
+            لم يُفرَّغ هذا المقطع بعد — التفريغ الآلي قيد الإعداد. يمكنك
+            الاستماع الآن، وسيظهر النص مع إبراز الكلمات فور اكتماله.
+          </p>
         </div>
-      </div>
-
-      <TranscriptView segmentId={segment.id} words={transcript.words} />
-
-      <p className="mt-6 text-xs text-[var(--color-ink-faint)]">
-        عدد الكلمات {transcript.words.length} · إصدار التفريغ{" "}
-        {transcript.version} · {transcript.engine}
-      </p>
+      )}
 
       <RelatedPassages key={segment.id} segmentId={segment.id} />
     </article>

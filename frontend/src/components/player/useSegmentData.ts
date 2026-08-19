@@ -10,7 +10,9 @@ export type SegmentData =
   | {
       status: "ready";
       segment: Segment;
-      transcript: Transcript;
+      /** Null when the segment has not been transcribed yet — the audio
+       *  plays, the transcript pane explains itself. */
+      transcript: Transcript | null;
       /** Where the data came from — "offline" means the network was gone. */
       source: "network" | "offline";
     }
@@ -46,6 +48,10 @@ export function useSegmentData(segmentId: number): SegmentData {
 
     const fromNetwork = async (): Promise<SegmentData> => {
       const segment = await getSegment(segmentId);
+      if (segment.transcript_version === null) {
+        // Ingested but not yet transcribed: playable, honestly untranscribed.
+        return { status: "ready", segment, transcript: null, source: "network" };
+      }
       const transcript = await getTranscript(
         segmentId,
         segment.transcript_version

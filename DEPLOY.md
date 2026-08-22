@@ -17,11 +17,11 @@ Required values in `.env`:
   `NEXT_PUBLIC_API_URL` — your domain. `DOMAIN_NAME` is scheme-prefixed
   (`https://example.com`); `SITE_BASE_URL` and `NEXT_PUBLIC_SITE_URL` default to
   it, so set them only if the public origin differs.
-- `ASR_BACKEND=cohere` and `EMBEDDING_BACKEND=e5` — **required.** Django's
-  built-in defaults are `stub`, and the stub engines *fabricate* transcript text
-  and embeddings. A production stack left on `stub` silently fills the archive
-  with invented speech attributed to the Sheikh. Keep `ALLOW_STUB_ENGINES` empty;
-  set it to `true` only for a throwaway staging smoke test.
+- `ASR_BACKEND=cohere` — **required.** Django's built-in default is `stub`,
+  and the stub engine *fabricates* transcript text. A production stack left on
+  `stub` silently fills the archive with invented speech attributed to the
+  Sheikh. Keep `ALLOW_STUB_ENGINES` empty; set it to `true` only for a
+  throwaway staging smoke test.
 - `CO_API_KEY` — Cohere API key for `ASR_BACKEND=cohere` (the default:
   `cohere-transcribe-arabic-07-2026`, Arabic-specialized, hosted — no GPU needed
   for transcription). `ASR_BACKEND=faster-whisper` is the offline/GPU
@@ -43,19 +43,25 @@ for `DOMAIN_NAME` automatically.
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backend python manage.py import_quran
+docker compose -f docker-compose.prod.yml exec backend python manage.py index_quran   # idempotent; builds the full-text ayahs index
 ```
+
+The `index_quran` step powers search over the mushaf itself (pasting a whole
+ayah must find it). The backend entrypoint also runs it on every start, so it
+self-heals an empty index — but run it explicitly here so search works without
+waiting for a redeploy.
 
 Audio ingestion runs from a (GPU) worker host with `pipeline/requirements.txt`
 installed, pointed at this stack's Redis and Postgres:
 
 ```bash
-export ASR_BACKEND=cohere CO_API_KEY=... EMBEDDING_BACKEND=e5   # never "stub" — see below
+export ASR_BACKEND=cohere CO_API_KEY=...   # never "stub" — see below
 celery -A pipeline.celery_app worker -Q pipeline   # long-running worker
 python -m pipeline.run --folder /data/mp3s --source-title "خواطر التلفزيون المصري" --kind khawatir
 ```
 
 **Production ingest must run with `ASR_BACKEND=cohere`** (hosted, default) or
-`faster-whisper` (local GPU), plus `EMBEDDING_BACKEND=e5`. As a backstop,
+`faster-whisper` (local GPU). As a backstop,
 `get_asr_engine()` itself refuses the stub without `ALLOW_STUB_ENGINES=true`,
 even on a worker that booted with dev settings. The `stub` backends exist for the test suite only: their
 output is *fabricated* text, not a transcription of the audio. Ingesting with

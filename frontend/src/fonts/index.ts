@@ -37,3 +37,26 @@ export const uiFont = localFont({
   fallback: ["Tahoma", "Arial", "sans-serif"],
   preload: true,
 });
+
+/*
+ * Landing-page brand faces (DESIGN.md, "Landing page — brand exception").
+ * Imported only by src/app/page.tsx, so next/font preloads them on the
+ * landing route alone — no cost on any other page.
+ */
+export const brandFont = localFont({
+  src: "./ReemKufi-Variable.ttf",
+  weight: "400 700",
+  variable: "--font-brand",
+  display: "swap",
+  fallback: ["Tahoma", "Arial", "sans-serif"],
+  preload: true,
+});
+
+export const amiriFont = localFont({
+  src: "./Amiri-Regular.ttf",
+  weight: "400",
+  variable: "--font-amiri",
+  display: "swap",
+  fallback: ["Amiri", "serif"],
+  preload: true,
+});

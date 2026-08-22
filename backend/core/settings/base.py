@@ -161,6 +161,7 @@ SPECTACULAR_SETTINGS = {
     # names like `Status127Enum` in the frontend types.
     'ENUM_NAME_OVERRIDES': {
         'ClipStatusEnum': 'clips.models.ClipStatus',
+        'ClipOutputEnum': 'clips.models.ClipOutput',
         'CorrectionStatusEnum': 'corpus.models.CorrectionStatus',
     },
 }
@@ -191,12 +192,14 @@ AUDIO_S3_ACCESS_KEY_ID = os.environ.get('AUDIO_S3_ACCESS_KEY_ID', 'minioadmin')
 AUDIO_S3_SECRET_ACCESS_KEY = os.environ.get('AUDIO_S3_SECRET_ACCESS_KEY', 'minioadmin')
 AUDIO_S3_REGION = os.environ.get('AUDIO_S3_REGION', 'auto')
 AUDIO_URL_TTL_SECONDS = int(os.environ.get('AUDIO_URL_TTL_SECONDS', str(6 * 3600)))
+AUDIO_PUBLIC_ENDPOINT_URL = os.environ.get(
+    'AUDIO_PUBLIC_ENDPOINT_URL', AUDIO_S3_ENDPOINT_URL
+)
 
 # Pluggable engines: 'stub' is deterministic and dependency-free (tests/dev);
 # real backends live in pipeline/ and are selected in worker environments.
-# core.settings.prod refuses to boot on either stub (core.engines_guard).
+# core.settings.prod refuses to boot on the stub (core.engines_guard).
 # ASR_BACKEND: 'stub' | 'cohere' (hosted API, default in prod) | 'faster-whisper' (local GPU).
-EMBEDDING_BACKEND = os.environ.get('EMBEDDING_BACKEND', 'stub')
 ASR_BACKEND = os.environ.get('ASR_BACKEND', 'stub')
 
 # Public site origin, used for sitemap URLs and as the default clip watermark.

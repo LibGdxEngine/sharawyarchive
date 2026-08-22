@@ -26,8 +26,8 @@ Two content kinds:
 |---|---|
 | Frontend | Next.js 14 (App Router, TypeScript, Tailwind CSS v4) |
 | Backend | Django 5 + Django REST Framework |
-| Database | PostgreSQL 16 with pgvector (HNSW index for embeddings) |
-| Search | Meilisearch (lexical) + pgvector cosine (semantic), RRF hybrid |
+| Database | PostgreSQL 16 |
+| Search | Meilisearch (lexical) |
 | Task queue | Celery + Redis |
 | Object storage | Cloudflare R2 (zero egress), presigned URLs |
 | Ingestion pipeline | faster-whisper ASR, CTC forced aligner, ffmpeg |

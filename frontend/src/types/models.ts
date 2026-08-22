@@ -153,10 +153,23 @@ export interface AyahMatch {
   surah_name_ar: string;
 }
 
+/**
+ * A canonical mushaf verse found by full-text search over the Quran text itself
+ * (not a reference parsed from the query — that is `AyahMatch`).
+ */
+export interface VerseMatch {
+  surah: number;
+  number: number;
+  text_uthmani: string;
+  surah_name_ar: string;
+  juz: number;
+  page: number;
+}
+
 export interface SearchResponse {
   query: string;
-  mode: "hybrid" | "lexical" | "semantic";
   ayah_matches: AyahMatch[];
+  verse_matches: VerseMatch[];
   results: SearchChunkResult[];
   page: number;
   total: number;
@@ -184,6 +197,9 @@ export interface CorrectionResponse {
 
 export type ClipStatus = "queued" | "rendering" | "done" | "failed";
 
+/** What a clip job produces: a video card or a plain audio export. */
+export type ClipOutput = "video" | "audio";
+
 /**
  * POST /api/clips/. A fresh job answers 202 "queued", but an identical range
  * already on file answers 200 with whatever that clip's status is by now — so
@@ -197,5 +213,7 @@ export interface ClipCreateResponse {
 export interface Clip {
   id: string;
   status: ClipStatus;
+  output: ClipOutput;
   video_url: string | null;
+  audio_url: string | null;
 }

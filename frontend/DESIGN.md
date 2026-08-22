@@ -99,9 +99,14 @@ duration is zeroed by the global media-query rule in globals.css).
 └─────────────────────────────────────────────────────────┘
 ```
 
-The audio player bar is always visible once a track is loaded. Height: 72px
-on mobile, 60px on ≥640px. It uses `position: fixed; bottom: 0` with a
-`backdrop-filter: blur(8px)` over the page content below.
+The audio player bar ("the gilded transport", `.player-bar` in globals.css)
+is always visible once a track is loaded. It uses `position: fixed; bottom: 0`
+with a `backdrop-filter: blur(10px)` over the page content below, capped by a
+gold hairline and a seek ribbon that rides its top edge. The bar's height is
+not fixed: `PlayerBar.tsx` measures itself and writes the exact pixel value
+into `--player-bar-height` on `<html>`, so `.page-shell` always reserves
+precisely the bar's real height (the stylesheet `--player-bar-height` values
+are just the fallback before any track loads).
 
 ## Quality Floor
 
@@ -128,12 +133,73 @@ These are non-negotiable baselines, enforced at the CSS level:
    properties (`margin-inline-start`, `padding-inline-end`, etc.) or Tailwind
    RTL-aware utilities.
 
+## Landing page — brand exception
+
+The landing page (`src/app/page.tsx`) implements the approved Claude Design
+mockup ("Sharawy Archive Landing") and is a deliberate, **scoped** exception to
+the Restraint rules above. On this one route only:
+
+- A gold brand palette (`--landing-*` tokens in `globals.css`, with dark-mode
+  variants) is used decoratively: waveform motif, search hero, chips.
+- The search box carries a soft shadow and a gold `:focus-within` ring
+  (`.landing-search`).
+- Two brand faces are added, loaded only on this route via `next/font/local`:
+  Reem Kufi (`--font-brand`, site title) and Amiri text (`--font-amiri`,
+  tagline + Quranic glyph accents).
+- Keyboard focus rings remain visible but take the brand gold
+  (`.landing :focus-visible`).
+
+Everything else in this document still governs every other page. Do not let
+the gold palette or the shadow leak past `.landing`, and do not "fix" the
+landing back to the green token system.
+
+## Surah page — mushaf illumination exception
+
+The surah reading page (`/surah/[n]`) is a third brand exception, joining the
+landing, the surah index and the verse player. Scope: `.surah-page` tokens in
+`globals.css`, applied by `src/app/surah/[n]/page.tsx`. On this route:
+
+- The gold manuscript palette (`--sp-*` tokens, dark-mode variants included)
+  is used decoratively: an illuminated-opening hero panel (star lattice
+  bands, corner flourishes, hairline inner frame, radial halo), an
+  eight-point-star divider, and badges for revelation place / ayah count.
+- Every ayah carries a rosette verse seal (`.ayah-seal`) — concentric rings,
+  a dotted outer ring that rotates a quarter-turn on hover, Arabic-Indic
+  numerals. The `?ayah=` active verse keeps the seal solid gold.
+- Segment affordances are gilded chips (`.sp-chip`); pagination and the
+  prev/next surah cards lift with a gold glow on hover.
+- Quran text colours itself in sepia manuscript ink (`--sp-quran-ink`); the
+  Amiri Quran face and 2.2 line-height rules are unchanged.
+- All motion (staggered ayah entrance, seal rotation, chip lifts) is gated
+  by `prefers-reduced-motion: no-preference`, per the Quality Floor.
+
+The bar styling (`.player-bar`, `.player-seek`, `.player-play`, `.player-eq`,
+`.player-chip`) applies globally to the fixed transport on every route.
+
+## Search page — illuminated results exception
+
+The search results page (`/search`) extends the manuscript language. Scope:
+`.search-page` / `--srch-*` tokens in `globals.css`, applied by
+`src/app/(site)/search/page.tsx`. On this route:
+
+- Verse hits are whole-card links (`.search-hit`) with rosette seals
+  (`.ayah-seal`, reused via `--sp-*` aliases inside the scope) — the
+  parchment card materialises on hover/focus, the meta line turns gold and
+  a chevron slides forward (negative X: RTL).
+- The eight-point-star divider separates the mushaf zone from the
+  machine-transcript zone, which deliberately stays on neutral surfaces
+  with the green accent chip (Rule 1: gold marks authentic Quran only).
+- All motion (hero rise, hairline draw, staggered card entrance, chunk-row
+  entrance) is gated by `prefers-reduced-motion: no-preference`.
+
 ## File Checklist
 
 - `src/fonts/AmiriQuran-Regular.ttf` — self-hosted
 - `src/fonts/IBMPlexSansArabic-Regular.ttf` — self-hosted
 - `src/fonts/IBMPlexSansArabic-Medium.ttf` — self-hosted
 - `src/fonts/IBMPlexSansArabic-SemiBold.ttf` — self-hosted
+- `src/fonts/ReemKufi-Variable.ttf` — self-hosted (landing only)
+- `src/fonts/Amiri-Regular.ttf` — self-hosted (landing only)
 - `src/fonts/index.ts` — `next/font/local` definitions
 - `src/app/globals.css` — all tokens and base styles
 - `src/app/layout.tsx` — `<html dir="rtl" lang="ar">`, font variables on `<html>`

@@ -1,10 +1,9 @@
 """Admin screens for the corpus.
 
 Two of them do real work — the correction review queue (Phase 6) and the topic
-publish gate (Phase 7) — and neither implements it here: the queue calls
-:mod:`corpus.corrections` and the gate flips a boolean that
-:mod:`corpus.topics` deliberately leaves off. Keeping the logic out of the
-admin is what lets it be tested without a browser.
+publish gate — and neither implements it here: the queue calls
+:mod:`corpus.corrections` and the gate flips a boolean. Keeping the logic out
+of the admin is what lets it be tested without a browser.
 """
 
 from __future__ import annotations
@@ -190,10 +189,10 @@ class CorrectionAdmin(admin.ModelAdmin):
 
 @admin.register(Topic)
 class TopicAdmin(admin.ModelAdmin):
-    """The publish gate for machine-made topics.
+    """The publish gate for topics.
 
-    ``build_topics`` creates every topic unpublished; nothing about one reaches
-    a reader until someone reads its passages here and ticks the box.
+    Topics start unpublished; nothing about one reaches a reader until someone
+    reads its passages here and ticks the box.
     """
 
     list_display = ("slug", "name_ar", "chunk_count", "is_published", "created_at")

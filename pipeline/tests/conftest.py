@@ -2,8 +2,9 @@
 
 The pipeline lives outside ``backend/``, so Django has to be set up by hand
 before pytest-django loads the settings module. The database defaults to
-``pipeline_pg`` on the host-published postgres (pgvector is required by
-``corpus.Chunk.embedding``); anything already exported wins.
+``pipeline_pg`` on the host-published postgres (production parity; the
+migration history still creates pgvector columns); anything already exported
+wins.
 
 The suite talks to the real MinIO from docker compose — the transcode stage
 uploading and ``storage.object_exists`` seeing the object is exactly what these

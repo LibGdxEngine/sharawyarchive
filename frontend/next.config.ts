@@ -27,6 +27,13 @@ const withSerwist = withSerwistInit({
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    // Turbopack's persistent dev cache (default-on since Next 16.1) kept
+    // serving a stale compile of globals.css out of the container's /app/.next
+    // volume after the file changed on the bind mount. Dev cold-start here is
+    // sub-second, so trade the cache away for correctness.
+    turbopackFileSystemCacheForDev: false,
+  },
 };
 
 const withServiceWorker = withSerwist(nextConfig);

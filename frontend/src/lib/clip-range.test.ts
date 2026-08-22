@@ -1,14 +1,14 @@
 /**
  * clip-range.test.ts
  *
- * Unit tests for the pure clip range constraints. The API rejects spans
- * outside 15–60s, so these functions must never let a drag produce one.
+ * Unit tests for the pure clip range constraints. The API rejects spans under
+ * 1s but accepts anything up to the segment length — so these functions must
+ * never let a drag produce a span below that floor.
  */
 
 import { describe, it, expect } from "vitest";
 import {
   MIN_CLIP_MS,
-  MAX_CLIP_MS,
   DEFAULT_CLIP_MS,
   canClipSegment,
   clampClipRange,
@@ -38,8 +38,8 @@ describe("clampClipRange", () => {
     });
   });
 
-  it("grows a too-short span forward to the 15s minimum", () => {
-    expect(clampClipRange({ startMs: 10_000, endMs: 12_000 }, LONG)).toEqual({
+  it("grows a too-short span forward to the minimum", () => {
+    expect(clampClipRange({ startMs: 10_000, endMs: 10_000 }, LONG)).toEqual({
       startMs: 10_000,
       endMs: 10_000 + MIN_CLIP_MS,
     });
@@ -47,23 +47,26 @@ describe("clampClipRange", () => {
 
   it("pulls the start back when growing would pass the end of the segment", () => {
     expect(
-      clampClipRange({ startMs: LONG - 3_000, endMs: LONG }, LONG)
+      clampClipRange({ startMs: LONG - 500, endMs: LONG }, LONG)
     ).toEqual({ startMs: LONG - MIN_CLIP_MS, endMs: LONG });
   });
 
-  it("cuts a too-long span back to the 60s maximum", () => {
+  it("keeps a span up to the whole segment — there is no maximum", () => {
     expect(clampClipRange({ startMs: 30_000, endMs: 200_000 }, LONG)).toEqual({
       startMs: 30_000,
-      endMs: 30_000 + MAX_CLIP_MS,
+      endMs: 200_000,
     });
+    expect(
+      clampClipRange({ startMs: 0, endMs: LONG }, LONG)
+    ).toEqual({ startMs: 0, endMs: LONG });
   });
 
   it("collapses to the whole segment when it is shorter than the minimum", () => {
-    expect(clampClipRange({ startMs: 2_000, endMs: 5_000 }, 9_000)).toEqual({
+    expect(clampClipRange({ startMs: 200, endMs: 500 }, 900)).toEqual({
       startMs: 0,
-      endMs: 9_000,
+      endMs: 900,
     });
-    expect(canClipSegment(9_000)).toBe(false);
+    expect(canClipSegment(900)).toBe(false);
     expect(canClipSegment(MIN_CLIP_MS)).toBe(true);
   });
 });
@@ -78,16 +81,16 @@ describe("moveClipStart", () => {
     });
   });
 
-  it("stops at end - 15s when dragged across the end handle", () => {
+  it("stops at end - minimum when dragged across the end handle", () => {
     expect(moveClipStart(range, 400_000, LONG)).toEqual({
       startMs: 130_000 - MIN_CLIP_MS,
       endMs: 130_000,
     });
   });
 
-  it("stops at end - 60s when dragged far back", () => {
+  it("goes all the way back to zero — no maximum span", () => {
     expect(moveClipStart(range, 0, LONG)).toEqual({
-      startMs: 130_000 - MAX_CLIP_MS,
+      startMs: 0,
       endMs: 130_000,
     });
   });
@@ -109,17 +112,17 @@ describe("moveClipEnd", () => {
     });
   });
 
-  it("stops at start + 15s when dragged across the start handle", () => {
+  it("stops at start + minimum when dragged across the start handle", () => {
     expect(moveClipEnd(range, 20_000, LONG)).toEqual({
       startMs: 100_000,
       endMs: 100_000 + MIN_CLIP_MS,
     });
   });
 
-  it("stops at start + 60s when dragged far forward", () => {
+  it("runs to the end of the segment — no maximum span", () => {
     expect(moveClipEnd(range, 500_000, LONG)).toEqual({
       startMs: 100_000,
-      endMs: 100_000 + MAX_CLIP_MS,
+      endMs: 500_000,
     });
   });
 
@@ -139,8 +142,9 @@ describe("defaultClipRange", () => {
   });
 
   it("backs off the tail so the clip still fits", () => {
+    // 4s remain, which is already legal — the span simply stops at the end.
     expect(defaultClipRange(LONG - 4_000, LONG)).toEqual({
-      startMs: LONG - MIN_CLIP_MS,
+      startMs: LONG - 4_000,
       endMs: LONG,
     });
   });

@@ -10,10 +10,6 @@ All durations and offsets are integer **milliseconds** (rule 5).
 from __future__ import annotations
 
 from django.db import models
-from pgvector.django import HnswIndex, VectorField
-
-EMBEDDING_DIMENSIONS = 1024
-"""multilingual-e5-large output width."""
 
 
 class SegmentKind(models.TextChoices):
@@ -159,7 +155,7 @@ class TranscriptWord(models.Model):
 
 
 class Chunk(models.Model):
-    """A 20-45s retrievable passage with an optional embedding."""
+    """A 20-45s retrievable passage, the unit of search indexing."""
 
     transcript = models.ForeignKey(Transcript, on_delete=models.CASCADE, related_name="chunks")
     idx = models.PositiveIntegerField()
@@ -167,7 +163,6 @@ class Chunk(models.Model):
     text_normalized = models.TextField()
     start_ms = models.PositiveBigIntegerField()
     end_ms = models.PositiveBigIntegerField()
-    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True, blank=True)
 
     class Meta:
         ordering = ["transcript_id", "idx"]
@@ -178,13 +173,6 @@ class Chunk(models.Model):
         ]
         indexes = [
             models.Index(fields=["transcript", "idx"], name="chunk_transcript_idx"),
-            HnswIndex(
-                name="chunk_embedding_hnsw",
-                fields=["embedding"],
-                m=16,
-                ef_construction=64,
-                opclasses=["vector_cosine_ops"],
-            ),
         ]
 
     def __str__(self) -> str:
@@ -194,10 +182,9 @@ class Chunk(models.Model):
 class Topic(models.Model):
     """A theme the corpus keeps returning to, e.g. الصبر.
 
-    Deliberately minimal: Phase 7 clusters chunk embeddings and labels the
-    clusters, and hangs its machinery off these two tables. Nothing is visible
-    to readers until a human sets ``is_published``, because an unreviewed
-    cluster label is a guess.
+    Deliberately minimal: a topic is a human-curated label over a set of
+    chunks. Nothing is visible to readers until a human sets ``is_published``,
+    because an unreviewed topic label is a guess.
     """
 
     slug = models.SlugField(max_length=100, unique=True)

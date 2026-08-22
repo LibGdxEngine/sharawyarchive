@@ -73,7 +73,11 @@ class SegmentDetailSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.IntegerField(allow_null=True))
     def get_transcript_version(self, segment: Segment) -> int | None:
         transcript = getattr(segment, 'transcript', None)
-        return None if transcript is None else transcript.version
+        # No aligned words yet ⇒ /transcript/ would 404, so advertise "no
+        # transcript" rather than a version the client can never fetch.
+        if transcript is None or not transcript.words.exists():
+            return None
+        return transcript.version
 
     @extend_schema_field(serializers.BooleanField())
     def get_is_human_reviewed(self, segment: Segment) -> bool:
@@ -124,8 +128,8 @@ class ChunkSpanSerializer(serializers.Serializer):
 
 
 class ChunkResultSerializer(serializers.Serializer):
-    """The search-result shape, reused wherever chunks are surfaced (topics,
-    related passages) so one renderer on the frontend handles all of them.
+    """The search-result shape, reused wherever chunks are surfaced (topics)
+    so one renderer on the frontend handles all of them.
     Mirrors :class:`search.services.SearchResult`."""
 
     chunk_id = serializers.IntegerField()

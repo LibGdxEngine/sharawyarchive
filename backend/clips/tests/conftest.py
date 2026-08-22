@@ -22,7 +22,6 @@ from api.tests.factories import (  # noqa: F401
     WORD_TEXTS,
     api,
     archive,
-    embedded_archive,
     reset_throttles,
 )
 from corpus import storage

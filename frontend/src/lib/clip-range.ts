@@ -1,14 +1,14 @@
 /**
  * Clip range arithmetic — pure, no DOM, no React.
  *
- * The API rejects a clip shorter than 15s or longer than 60s (API_CONTRACT.md),
- * so the composer never lets the handles reach an invalid range in the first
- * place: every drag is funnelled through these functions and comes back
- * already legal. All values are integer milliseconds (CLAUDE.md rule 5).
+ * The API rejects a clip shorter than one second (API_CONTRACT.md, amendment
+ * 9); beyond that a clip may run all the way to the end of its segment. The
+ * composer never lets the handles reach an invalid range in the first place:
+ * every drag is funnelled through these functions and comes back already
+ * legal. All values are integer milliseconds (CLAUDE.md rule 5).
  */
 
-export const MIN_CLIP_MS = 15_000;
-export const MAX_CLIP_MS = 60_000;
+export const MIN_CLIP_MS = 1_000;
 
 /** Span a freshly opened composer proposes around the playhead. */
 export const DEFAULT_CLIP_MS = 30_000;
@@ -25,14 +25,15 @@ function clamp(value: number, lo: number, hi: number): number {
 /**
  * Span bounds available inside a segment.
  *
- * A segment shorter than 15s cannot produce a legal clip at all; rather than
- * returning an impossible range, the bounds collapse to the whole segment and
- * the caller (ClipComposer) refuses to submit.
+ * A segment shorter than the minimum cannot produce a legal clip at all; rather
+ * than returning an impossible range, the bounds collapse to the whole segment
+ * and the caller (ClipComposer) refuses to submit. The maximum is always the
+ * segment itself — there is no artificial ceiling.
  */
 function spanBounds(totalMs: number): { min: number; max: number } {
   return {
     min: Math.min(MIN_CLIP_MS, totalMs),
-    max: Math.min(MAX_CLIP_MS, totalMs),
+    max: Math.max(MIN_CLIP_MS, totalMs),
   };
 }
 
@@ -43,9 +44,9 @@ function total(durationMs: number): number {
 /**
  * Force an arbitrary range inside `[0, durationMs]` and inside the legal span.
  *
- * Ends are swapped if inverted, the span is grown forward to the minimum or
- * cut back to the maximum, and if growing forward would run past the end of
- * the segment the start is pulled back instead.
+ * Ends are swapped if inverted, the span is grown forward to the minimum, and
+ * if growing forward would run past the end of the segment the start is pulled
+ * back instead.
  */
 export function clampClipRange(
   range: ClipRange,
@@ -71,8 +72,8 @@ export function clampClipRange(
 /**
  * Drag the start handle to `startMs`, holding the end still.
  *
- * The start is confined to `[end - max, end - min]`, so dragging it past the
- * end handle parks it at the minimum span instead of inverting the range.
+ * The start is confined to `[0, end - min]`, so dragging it past the end
+ * handle parks it at the minimum span instead of inverting the range.
  */
 export function moveClipStart(
   range: ClipRange,
@@ -80,20 +81,19 @@ export function moveClipStart(
   durationMs: number
 ): ClipRange {
   const totalMs = total(durationMs);
-  const { min, max } = spanBounds(totalMs);
+  const { min } = spanBounds(totalMs);
 
   const end = clamp(Math.round(range.endMs), min, totalMs);
-  const lo = Math.max(0, end - max);
-  const hi = Math.max(lo, end - min);
+  const hi = Math.max(0, end - min);
 
-  return { startMs: clamp(Math.round(startMs), lo, hi), endMs: end };
+  return { startMs: clamp(Math.round(startMs), 0, hi), endMs: end };
 }
 
 /**
  * Drag the end handle to `endMs`, holding the start still.
  *
- * Mirror of {@link moveClipStart}: the end is confined to
- * `[start + min, start + max]` and never passes the end of the segment.
+ * Mirror of {@link moveClipStart}: the end is confined to `[start + min,
+ * totalMs]` and never passes the end of the segment.
  */
 export function moveClipEnd(
   range: ClipRange,
@@ -101,13 +101,12 @@ export function moveClipEnd(
   durationMs: number
 ): ClipRange {
   const totalMs = total(durationMs);
-  const { min, max } = spanBounds(totalMs);
+  const { min } = spanBounds(totalMs);
 
   const start = clamp(Math.round(range.startMs), 0, Math.max(0, totalMs - min));
   const lo = Math.min(start + min, totalMs);
-  const hi = Math.max(lo, Math.min(start + max, totalMs));
 
-  return { startMs: start, endMs: clamp(Math.round(endMs), lo, hi) };
+  return { startMs: start, endMs: clamp(Math.round(endMs), lo, totalMs) };
 }
 
 /** The range the composer opens with: DEFAULT_CLIP_MS from the playhead. */

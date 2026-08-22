@@ -26,8 +26,36 @@ def _optional_int(request: Request, name: str) -> int | None:
         raise services.SearchParameterError(f"{name} must be an integer") from error
 
 
+class SuggestView(APIView):
+    """``GET /api/search/suggest/?q=&kind=`` — autocomplete suggestions.
+
+    ``kind`` scopes suggestions to the selected content (recitation → mushaf
+    text, khawatir → khawatir transcript snippets). Returns a plain list of
+    strings (matched text snippets). Never cached; results move with every
+    pipeline run.
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'search'
+
+    @extend_schema(
+        operation_id='search_suggest',
+        parameters=[
+            OpenApiParameter('q', str, required=True),
+            OpenApiParameter('kind', str),
+        ],
+        responses={200: list[str]},
+    )
+    def get(self, request: Request) -> Response:
+        query = request.query_params.get("q", "").strip()
+        if not query:
+            return _no_store(Response([]))
+        suggestions = services.suggest(query, kind=request.query_params.get("kind") or None)
+        return _no_store(Response(suggestions))
+
+
 class SearchView(APIView):
-    """``GET /api/search/?q=&mode=&kind=&surah=&page=`` (API_CONTRACT.md).
+    """``GET /api/search/?q=&kind=&surah=&page=`` (API_CONTRACT.md).
 
     Never cached: results move with every pipeline run.
     """
@@ -39,7 +67,6 @@ class SearchView(APIView):
         operation_id='search_retrieve',
         parameters=[
             OpenApiParameter('q', str, required=True),
-            OpenApiParameter('mode', str, enum=services.SEARCH_MODES),
             OpenApiParameter('kind', str),
             OpenApiParameter('surah', int),
             OpenApiParameter('page', int),
@@ -54,7 +81,6 @@ class SearchView(APIView):
             page = _optional_int(request, "page")
             response = services.search(
                 query,
-                mode=request.query_params.get("mode") or services.DEFAULT_MODE,
                 kind=request.query_params.get("kind") or None,
                 surah=_optional_int(request, "surah"),
                 page=1 if page is None else page,

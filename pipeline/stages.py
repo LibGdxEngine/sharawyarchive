@@ -1,4 +1,4 @@
-"""The seven ingestion stages, as Celery tasks and as plain callables.
+"""The six ingestion stages, as Celery tasks and as plain callables.
 
 Every stage is:
 
@@ -34,7 +34,6 @@ output, not a shared ``sha256`` column.  The exact guard per stage is:
   ``StageSkipped``.
 * **chunk** — an existing ``Chunk`` row on the segment's transcript →
   ``StageSkipped``.
-* **embed** — ``Chunk.embedding`` non-null for every pending chunk → ``StageSkipped``.
 * **index_segment** — ``Segment.status == INDEXED`` → ``StageSkipped``.
 
 Checking for a stage's own output (rather than a shared flag) means the stage
@@ -56,6 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from celery import chain
+from django.db.models import F
 from django.utils import timezone
 
 from pipeline.celery_app import app
@@ -71,7 +71,6 @@ setup_django()
 
 from corpus import storage
 from corpus.arabic import normalize_for_index
-from corpus.embeddings import get_embedder
 from corpus.models import (
     AudioAsset,
     Chunk,
@@ -103,7 +102,6 @@ TRANSCODE = "transcode"
 TRANSCRIBE = "transcribe"
 ALIGN = "align"
 CHUNK = "chunk"
-EMBED = "embed"
 INDEX = "index_segment"
 
 
@@ -559,6 +557,10 @@ def _align(segment: Segment, local_path: str) -> str:
             for index, word in enumerate(aligned)
         ]
     )
+    # The transcript endpoint is cached immutable per ?v=; a client that saw
+    # this transcript before its words existed must get a fresh URL, so every
+    # align that writes words bumps the version.
+    Transcript.objects.filter(pk=transcript.pk).update(version=F('version') + 1)
     Segment.objects.filter(pk=segment.pk).update(status=SegmentStatus.ALIGNED)
     return f"{len(aligned)} words via {aligner.name} {aligner.version}"
 
@@ -618,23 +620,6 @@ def _chunk(segment: Segment) -> str:
         )
     Chunk.objects.bulk_create(rows)
     return f"{len(rows)} chunks from {len(words)} words"
-
-
-def _embed(segment: Segment) -> str:
-    transcript = Transcript.objects.get(segment=segment)
-    pending = list(
-        Chunk.objects.filter(transcript=transcript, embedding__isnull=True).order_by("idx")
-    )
-    if not pending:
-        raise StageSkipped("every chunk already has an embedding")
-
-    # The normalized form is embedded so passages and queries (which are
-    # normalized before search, rule 2) meet in the same space.
-    vectors = get_embedder().embed_passages([row.text_normalized for row in pending])
-    for row, vector in zip(pending, vectors, strict=True):
-        row.embedding = vector
-    Chunk.objects.bulk_update(pending, ["embedding"])
-    return f"{len(pending)} chunks embedded"
 
 
 def _search_services():  # noqa: ANN202 - the search app's module, resolved late
@@ -704,13 +689,6 @@ def do_chunk(segment_id: int) -> StageResult:
     return _run_stage(CHUNK, segment_id, body)
 
 
-def do_embed(segment_id: int) -> StageResult:
-    def body() -> str:
-        return _embed(Segment.objects.get(pk=segment_id))
-
-    return _run_stage(EMBED, segment_id, body)
-
-
 def do_index_segment(segment_id: int) -> StageResult:
     def body() -> str:
         return _index(Segment.objects.get(pk=segment_id))
@@ -745,7 +723,6 @@ def ingest(
             transcribe.s(segment_id=item.segment_id, local_path=item.local_path),
             align.s(segment_id=item.segment_id, local_path=item.local_path),
             chunk.s(segment_id=item.segment_id),
-            embed.s(segment_id=item.segment_id),
             index_segment.s(segment_id=item.segment_id),
         ).apply_async()
     return [item.segment_id for item in files]
@@ -781,13 +758,6 @@ def chunk(previous: object = None, *, segment_id: int) -> bool:
     if previous is False:
         return False
     return do_chunk(segment_id).ok
-
-
-@app.task(name="pipeline.embed")
-def embed(previous: object = None, *, segment_id: int) -> bool:
-    if previous is False:
-        return False
-    return do_embed(segment_id).ok
 
 
 @app.task(name="pipeline.index_segment")

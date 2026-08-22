@@ -22,7 +22,6 @@ from pytest_django.fixtures import Settings
 
 from api.tests.factories import reset_throttles  # noqa: F401
 from corpus.arabic import normalize_for_index
-from corpus.embeddings import StubEmbedder
 from corpus.models import AudioAsset, Chunk, Segment, SegmentKind, Source, Transcript
 from quran.models import Ayah, Surah
 from search import services
@@ -160,35 +159,39 @@ def corpus(quran_slice: dict[int, Surah]) -> CorpusFixture:
 
 
 @pytest.fixture
-def embedded_corpus(corpus: CorpusFixture) -> CorpusFixture:
-    """The same corpus with deterministic stub embeddings on every chunk."""
-    vectors = StubEmbedder().embed_passages([chunk.text for chunk in corpus.chunks])
-    for chunk, vector in zip(corpus.chunks, vectors, strict=True):
-        chunk.embedding = vector
-    Chunk.objects.bulk_update(corpus.chunks, ["embedding"])
-    return corpus
-
-
-@pytest.fixture
 def meili_prefix(settings: Settings) -> Iterator[str]:
     """Point Meilisearch at a private index name and drop it afterwards."""
     settings.MEILI_INDEX_PREFIX = f"test_{uuid.uuid4().hex[:8]}_"
     yield settings.MEILI_INDEX_PREFIX
     client = services.meili_client()
-    try:
-        client.wait_for_task(
-            client.delete_index(services.chunks_index_name()).task_uid,
-            timeout_in_ms=services.TASK_TIMEOUT_MS,
-        )
-    except MeilisearchApiError as error:  # index was never created
-        if error.code != "index_not_found":
-            raise
+    for index_name in (services.chunks_index_name(), services.ayahs_index_name()):
+        try:
+            client.wait_for_task(
+                client.delete_index(index_name).task_uid,
+                timeout_in_ms=services.TASK_TIMEOUT_MS,
+            )
+        except MeilisearchApiError as error:  # index was never created
+            if error.code != "index_not_found":
+                raise
 
 
 @pytest.fixture
 def chunks_index(meili_prefix: str) -> str:
     services.ensure_chunks_index()
     return services.chunks_index_name()
+
+
+@pytest.fixture
+def ayahs_index(meili_prefix: str) -> str:
+    services.ensure_ayahs_index()
+    return services.ayahs_index_name()
+
+
+@pytest.fixture
+def indexed_quran(ayahs_index: str, quran_slice: dict[int, Surah]) -> None:
+    """Index every Ayah row in the database — in this suite that is the handful
+    ``quran_slice`` created, never the full 6236-ayah import."""
+    services.index_ayahs(Ayah.objects.order_by("surah_id", "number"))
 
 
 @pytest.fixture

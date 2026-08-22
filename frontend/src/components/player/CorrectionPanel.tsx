@@ -87,7 +87,7 @@ export default function CorrectionPanel({
             value={text}
             rows={2}
             onChange={(event) => setText(event.target.value)}
-            className="mt-1 w-full resize-y border border-[var(--color-border)] bg-transparent p-2 text-base leading-[1.8] text-[var(--color-ink)]"
+            className="mt-1 w-full resize-y rounded border border-[var(--lp-card-border)] bg-transparent p-2 text-base leading-[1.8] text-[var(--color-ink)]"
           />
 
           <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -97,7 +97,7 @@ export default function CorrectionPanel({
               disabled={
                 phase === "sending" || suggestion.length === 0 || unchanged
               }
-              className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-ink)] disabled:opacity-50"
+              className="listen-chip"
             >
               {phase === "sending" ? "جارٍ الإرسال…" : "إرسال الاقتراح"}
             </button>

@@ -9,7 +9,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from api.tests.factories import Archive
-from clips.models import Clip, ClipStatus
+from clips.models import MIN_SPAN_MS, Clip, ClipStatus
 
 pytestmark = pytest.mark.django_db
 
@@ -38,13 +38,26 @@ def test_a_clip_request_is_queued(api: APIClient, archive: Archive) -> None:
     assert body['status'] == 'queued'
 
     clip = Clip.objects.get(pk=body['id'])
-    assert (clip.start_ms, clip.end_ms, clip.preset) == (125_000, 155_000, 'night')
+    assert (clip.start_ms, clip.end_ms, clip.preset, clip.output) == (
+        125_000, 155_000, 'night', 'video'
+    )
     assert clip.storage_key == ''  # rendering is somebody else's job
 
 
-@pytest.mark.parametrize('span', [15_000, 60_000])
+@pytest.mark.parametrize('span', [MIN_SPAN_MS, 60_000])
 def test_the_span_bounds_are_inclusive(api: APIClient, archive: Archive, span: int) -> None:
     response = api.post(URL, _body(archive, end_ms=125_000 + span), format='json')
+
+    assert response.status_code == 202
+
+
+def test_a_span_may_run_to_the_end_of_the_segment(
+    api: APIClient, archive: Archive
+) -> None:
+    """The 60s cap is gone: any span up to the segment length is legal."""
+    response = api.post(
+        URL, _body(archive, start_ms=0, end_ms=archive.segment.duration_ms), format='json'
+    )
 
     assert response.status_code == 202
 
@@ -52,11 +65,11 @@ def test_the_span_bounds_are_inclusive(api: APIClient, archive: Archive, span: i
 @pytest.mark.parametrize(
     'overrides',
     [
-        {'end_ms': 125_000 + 14_999},  # too short
-        {'end_ms': 125_000 + 60_001},  # too long
+        {'end_ms': 125_000 + (MIN_SPAN_MS - 1)},  # too short
         {'start_ms': 155_000, 'end_ms': 125_000},  # inverted
         {'start_ms': 580_000, 'end_ms': 610_000},  # past the end of the segment
         {'preset': 'neon'},
+        {'output': 'gif'},
         {'segment_id': 999999},
     ],
 )
@@ -136,29 +149,48 @@ def test_a_different_preset_is_a_different_job(api: APIClient, archive: Archive)
     assert Clip.objects.count() == 2
 
 
+def test_a_different_output_is_a_different_job(api: APIClient, archive: Archive) -> None:
+    api.post(URL, _body(archive), format='json')
+
+    response = api.post(URL, _body(archive, output='audio'), format='json')
+
+    assert response.status_code == 202
+    assert Clip.objects.count() == 2
+
+
 # --- GET ---------------------------------------------------------------------
 
 
-def test_a_queued_clip_has_no_video_url(api: APIClient, archive: Archive) -> None:
+def test_a_queued_clip_has_no_urls(api: APIClient, archive: Archive) -> None:
     clip_id = api.post(URL, _body(archive), format='json').json()['id']
 
     response = api.get(f'{URL}{clip_id}/')
 
     assert response.status_code == 200
-    assert response.json() == {'id': clip_id, 'status': 'queued', 'video_url': None}
+    assert response.json() == {
+        'id': clip_id,
+        'status': 'queued',
+        'output': 'video',
+        'video_url': None,
+        'audio_url': None,
+    }
 
 
 @pytest.mark.parametrize('status', [ClipStatus.RENDERING, ClipStatus.FAILED])
-def test_an_unfinished_clip_has_no_video_url(
+def test_an_unfinished_clip_has_no_urls(
     api: APIClient, archive: Archive, status: str
 ) -> None:
     clip_id = api.post(URL, _body(archive), format='json').json()['id']
     Clip.objects.filter(pk=clip_id).update(status=status)
 
-    assert api.get(f'{URL}{clip_id}/').json()['video_url'] is None
+    body = api.get(f'{URL}{clip_id}/').json()
+    assert body['video_url'] is None
+    assert body['audio_url'] is None
 
 
-def test_a_finished_clip_serves_a_presigned_url(api: APIClient, archive: Archive) -> None:
+def test_a_finished_video_serves_a_presigned_url(
+    api: APIClient, archive: Archive
+) -> None:
     clip_id = api.post(URL, _body(archive), format='json').json()['id']
     Clip.objects.filter(pk=clip_id).update(
         status=ClipStatus.DONE, storage_key='clips/rendered.mp4'
@@ -166,9 +198,26 @@ def test_a_finished_clip_serves_a_presigned_url(api: APIClient, archive: Archive
 
     body = api.get(f'{URL}{clip_id}/').json()
 
-    assert set(body) == {'id', 'status', 'video_url'}
+    assert set(body) == {'id', 'status', 'output', 'video_url', 'audio_url'}
     assert body['status'] == 'done'
+    assert body['output'] == 'video'
     assert 'X-Amz-Signature=' in body['video_url']
+    assert body['audio_url'] is None
+
+
+def test_a_finished_audio_serves_a_presigned_audio_url(
+    api: APIClient, archive: Archive
+) -> None:
+    clip_id = api.post(URL, _body(archive, output='audio'), format='json').json()['id']
+    Clip.objects.filter(pk=clip_id).update(
+        status=ClipStatus.DONE, storage_key='clips/rendered.m4a'
+    )
+
+    body = api.get(f'{URL}{clip_id}/').json()
+
+    assert body['output'] == 'audio'
+    assert body['video_url'] is None
+    assert 'X-Amz-Signature=' in body['audio_url']
 
 
 def test_an_unknown_clip_is_404(api: APIClient, archive: Archive) -> None:

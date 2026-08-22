@@ -10,9 +10,21 @@ from api.tests.factories import Archive, make_topic
 from corpus.models import Chunk
 from corpus.views import TOPIC_CHUNK_LIMIT
 
-from .test_related_api import RESULT_KEYS
-
 pytestmark = pytest.mark.django_db
+
+RESULT_KEYS = {
+    'chunk_id',
+    'segment_id',
+    'segment_title',
+    'surah',
+    'ayah_start',
+    'ayah_end',
+    'kind',
+    'text',
+    'start_ms',
+    'end_ms',
+}
+"""The search-result shape (``ChunkResultSerializer``)."""
 
 TOPIC_KEYS = {'slug', 'name_ar', 'description_ar', 'chunk_count'}
 

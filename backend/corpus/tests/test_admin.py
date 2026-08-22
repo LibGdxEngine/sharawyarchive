@@ -2,7 +2,7 @@
 
 No browser involved: the admin is thin enough that calling its display methods
 and actions directly is the whole of it, which is the point of keeping the work
-in ``corpus.corrections`` and ``corpus.topics``.
+in ``corpus.corrections``.
 """
 
 from __future__ import annotations
@@ -15,12 +15,11 @@ from django.contrib.messages.storage.fallback import FallbackStorage
 from django.http import HttpRequest
 from django.test import RequestFactory
 
+from api.tests.factories import make_topic
 from corpus.admin import CorrectionAdmin, TopicAdmin
 from corpus.models import Correction, CorrectionStatus, Topic
-from corpus.topics import build_topics
 
 from .conftest import Passages, make_correction
-from .test_topics import build_clusters
 
 pytestmark = pytest.mark.django_db
 
@@ -116,10 +115,9 @@ def test_the_reject_action_closes_the_correction(
 
 
 def test_a_topic_previews_its_most_central_passages(
-    topic_admin: TopicAdmin, db: None
+    topic_admin: TopicAdmin, passages: Passages
 ) -> None:
-    build_clusters()
-    (topic, *_) = build_topics().topics
+    topic = make_topic(passages.chunks)
 
     rendered = topic_admin.central_chunks(topic)
 
@@ -135,9 +133,8 @@ def test_a_topic_without_passages_previews_a_dash(topic_admin: TopicAdmin, db: N
     assert topic_admin.central_chunks(topic) == "—"
 
 
-def test_publishing_is_the_gate(topic_admin: TopicAdmin, db: None) -> None:
-    build_clusters()
-    build_topics()
+def test_publishing_is_the_gate(topic_admin: TopicAdmin, passages: Passages) -> None:
+    make_topic(passages.chunks, is_published=False)
     request = _request()
 
     topic_admin.publish_selected(request, Topic.objects.all())
@@ -149,9 +146,8 @@ def test_publishing_is_the_gate(topic_admin: TopicAdmin, db: None) -> None:
     assert not Topic.objects.filter(is_published=True).exists()
 
 
-def test_the_topic_list_counts_its_passages(topic_admin: TopicAdmin, db: None) -> None:
-    build_clusters()
-    (topic, *_) = build_topics().topics
+def test_the_topic_list_counts_its_passages(topic_admin: TopicAdmin, passages: Passages) -> None:
+    topic = make_topic(passages.chunks)
 
     listed = topic_admin.get_queryset(_request()).get(pk=topic.pk)
 

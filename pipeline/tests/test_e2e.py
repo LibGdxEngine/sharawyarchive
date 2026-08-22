@@ -101,6 +101,19 @@ def test_transcript_words_are_monotonic_integer_milliseconds(
 
 
 @pytest.mark.django_db
+def test_align_bumps_the_transcript_version(
+    audio_folder: Path, fake_search: FakeSearchServices
+) -> None:
+    """The transcript endpoint is cached immutable per ``?v=``; align writing
+    words must move the version past any pre-alignment fetch."""
+    drive(audio_folder, limit=1)
+
+    transcript = Transcript.objects.get()
+    assert transcript.words.exists()
+    assert transcript.version == 2  # created at 1, bumped once by align
+
+
+@pytest.mark.django_db
 def test_chunks_carry_display_text_and_a_normalized_form(
     audio_folder: Path, fake_search: FakeSearchServices
 ) -> None:
@@ -114,8 +127,6 @@ def test_chunks_carry_display_text_and_a_normalized_form(
         assert HARAKA not in chunk.text_normalized  # the index form drops them
         assert isinstance(chunk.start_ms, int) and isinstance(chunk.end_ms, int)
         assert chunk.end_ms > chunk.start_ms
-        assert chunk.embedding is not None
-        assert len(chunk.embedding) == 1024
 
     assert fake_search.ensure_calls == 1
     assert len(fake_search.indexed) == len(chunks)

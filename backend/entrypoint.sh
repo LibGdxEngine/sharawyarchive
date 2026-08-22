@@ -32,6 +32,15 @@ then
     python manage.py migrate --noinput
 fi
 
+# (Re)build the Meilisearch ayahs index from the database. Idempotent: documents
+# are keyed by ayah id, so this is a cheap no-op when nothing changed, and it
+# self-heals an empty index after `import_quran` seeded a fresh database.
+if [ "$1" != "celery" ]
+then
+    echo "Indexing Quran text for full-text search..."
+    python manage.py index_quran
+fi
+
 # Collect static files for production
 if [ "$DJANGO_SETTINGS_MODULE" = "core.settings.prod" ] && [ "$1" != "celery" ]
 then

@@ -115,6 +115,18 @@ def test_segment_without_a_transcript_reports_no_version(
     assert body['is_human_reviewed'] is False
 
 
+def test_segment_with_unaligned_transcript_reports_no_version(
+    api: APIClient, archive: Archive
+) -> None:
+    """A transcript whose align stage never ran has no words to serve, so the
+    segment must not advertise a version the client can never fetch."""
+    archive.transcript.words.all().delete()
+
+    body = api.get(f'/api/segments/{archive.segment.pk}/').json()
+
+    assert body['transcript_version'] is None
+
+
 def test_reviewed_transcript_surfaces_on_the_segment(api: APIClient, archive: Archive) -> None:
     archive.transcript.is_human_reviewed = True
     archive.transcript.save(update_fields=['is_human_reviewed'])
@@ -168,6 +180,17 @@ def test_segment_without_a_transcript_is_404(api: APIClient, archive: Archive) -
     archive.transcript.delete()
 
     assert api.get(f'/api/segments/{archive.segment.pk}/transcript/').status_code == 404
+
+
+def test_transcript_without_aligned_words_is_404(api: APIClient, archive: Archive) -> None:
+    """Empty word arrays must never be served: the response is immutable per
+    ``?v=``, so a pre-alignment fetch would cache "no text" for a year."""
+    archive.transcript.words.all().delete()
+
+    response = api.get(f'/api/segments/{archive.segment.pk}/transcript/')
+
+    assert response.status_code == 404
+    assert 'Cache-Control' not in response.headers
 
 
 def test_transcript_of_an_unknown_segment_is_404(api: APIClient, archive: Archive) -> None:

@@ -7,13 +7,11 @@ chunks that overlap the edit are rebuilt" means anything.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks
 
 from corpus import corrections
 from corpus.arabic import normalize_for_index
-from corpus.embeddings import StubEmbedder
 from corpus.models import Chunk, CorrectionStatus, TranscriptWord
 from search import services
 
@@ -36,7 +34,7 @@ def _timings(passages: Passages) -> list[tuple[int, int]]:
     return [(word.start_ms, word.end_ms) for word in passages.words()]
 
 
-def _snapshot(chunk_id: int) -> tuple[str, str, int, int, list[float]]:
+def _snapshot(chunk_id: int) -> tuple[str, str, int, int]:
     """Everything about a chunk an approval could plausibly touch."""
     fresh = Chunk.objects.get(pk=chunk_id)
     return (
@@ -44,7 +42,6 @@ def _snapshot(chunk_id: int) -> tuple[str, str, int, int, list[float]]:
         fresh.text_normalized,
         fresh.start_ms,
         fresh.end_ms,
-        list(fresh.embedding),
     )
 
 
@@ -175,7 +172,7 @@ def test_only_the_overlapping_chunk_is_rebuilt(passages: Passages) -> None:
     assert {pk: _snapshot(pk) for pk in untouched} == untouched
 
 
-def test_the_rebuilt_chunk_carries_the_new_text_and_embedding(passages: Passages) -> None:
+def test_the_rebuilt_chunk_carries_the_new_text(passages: Passages) -> None:
     before = _snapshot(passages.chunks[MIDDLE].pk)
     correction = make_correction(passages, *TARGET, "قلوب مؤمنة")
 
@@ -185,9 +182,6 @@ def test_the_rebuilt_chunk_carries_the_new_text_and_embedding(passages: Passages
     assert chunk.text == "والرحمة في قلوب مؤمنة يهدي إلى طريق الحق دائما"
     assert chunk.text_normalized == normalize_for_index(chunk.text)
     assert (chunk.start_ms, chunk.end_ms) == (before[2], before[3])  # spans hold
-    expected = StubEmbedder().embed_passages([chunk.text_normalized])[0]
-    assert np.allclose(np.asarray(chunk.embedding), np.asarray(expected), atol=1e-6)
-    assert not np.allclose(np.asarray(chunk.embedding), np.asarray(before[4]), atol=1e-6)
 
 
 def test_correcting_the_last_word_of_a_chunk_stays_in_that_chunk(

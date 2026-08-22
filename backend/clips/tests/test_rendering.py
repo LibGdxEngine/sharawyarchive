@@ -19,7 +19,7 @@ from rest_framework.test import APIClient
 
 from api.tests.factories import Archive
 from clips import rendering
-from clips.models import Clip, ClipPreset, ClipStatus
+from clips.models import Clip, ClipOutput, ClipPreset, ClipStatus
 from corpus import storage
 
 from .conftest import Renderable, ffprobe
@@ -31,9 +31,17 @@ END_MS = 25_000
 SPAN_MS = END_MS - START_MS
 
 
-def _clip(renderable: Renderable, preset: str = ClipPreset.NIGHT) -> Clip:
+def _clip(
+    renderable: Renderable,
+    preset: str = ClipPreset.NIGHT,
+    output: str = ClipOutput.VIDEO,
+) -> Clip:
     return Clip.objects.create(
-        segment=renderable.segment, start_ms=START_MS, end_ms=END_MS, preset=preset
+        segment=renderable.segment,
+        start_ms=START_MS,
+        end_ms=END_MS,
+        preset=preset,
+        output=output,
     )
 
 
@@ -60,7 +68,7 @@ def test_a_clip_renders_to_a_vertical_h264_card(
     assert clip.status == ClipStatus.DONE
     assert clip.error == ''
     assert clip.storage_key == storage.clip_key(
-        renderable.segment.pk, START_MS, END_MS, ClipPreset.NIGHT
+        renderable.segment.pk, START_MS, END_MS, ClipPreset.NIGHT, clip.output
     )
 
     probe = ffprobe(_download(clip.storage_key, tmp_path / 'rendered.mp4'))
@@ -68,13 +76,39 @@ def test_a_clip_renders_to_a_vertical_h264_card(
     assert streams['video']['codec_name'] == 'h264'
     assert (streams['video']['width'], streams['video']['height']) == (1080, 1920)
     assert streams['audio']['codec_name'] == 'aac'
-    # -ss/-to trimmed the source, and -shortest ended the infinite colour source
-    # with it.
+    # -ss/-to trimmed the source, and the finite wave/audio ended the infinite
+    # colour source with it.
     assert abs(float(probe['format']['duration']) * 1000 - SPAN_MS) <= 500
 
     body = api.get(f'/api/clips/{clip.pk}/').json()
     assert body['status'] == 'done'
+    assert body['output'] == ClipOutput.VIDEO
     assert 'X-Amz-Signature=' in body['video_url']
+    assert body['audio_url'] is None
+
+
+def test_an_audio_clip_renders_to_an_m4a_that_carries_the_transcript(
+    renderable: Renderable, tmp_path: Path, api: APIClient
+) -> None:
+    clip = _clip(renderable, output=ClipOutput.AUDIO)
+
+    rendering.render_clip(clip)
+
+    clip.refresh_from_db()
+    assert clip.status == ClipStatus.DONE
+    assert clip.storage_key.endswith('.m4a')
+
+    probe = ffprobe(_download(clip.storage_key, tmp_path / 'rendered.m4a'))
+    assert probe['streams'][0]['codec_name'] == 'aac'
+    assert abs(float(probe['format']['duration']) * 1000 - SPAN_MS) <= 500
+    # The machine transcript travels in the lyrics metadata, with its mark.
+    assert 'lyrics' in probe['format']['tags']
+    assert rendering.MACHINE_TRANSCRIPT_MARK in probe['format']['tags']['lyrics']
+
+    body = api.get(f'/api/clips/{clip.pk}/').json()
+    assert body['output'] == ClipOutput.AUDIO
+    assert body['video_url'] is None
+    assert 'X-Amz-Signature=' in body['audio_url']
 
 
 def test_a_finished_clip_is_never_rendered_twice(
@@ -176,12 +210,37 @@ def test_the_command_trims_the_audio_and_paints_the_preset() -> None:
     assert command[command.index('-to') + 1] == '25.000'
     # The trim options come before the input they apply to.
     assert command.index('-to') < command.index('-i')
+    graph = command[command.index('-filter_complex') + 1]
     assert 'color=c=0x101312:s=1080x1920:r=30' in command
+    # The animated wave is driven by the audio and composited over the colour,
+    # then the karaoke card is burned on top.
+    assert 'showwaves=s=1080x1920:mode=cline:rate=30:colors=0x3aad7a:scale=sqrt' in graph
+    assert 'blend=all_mode=screen:shortest=1' in graph
     # A colon in the path would otherwise be read as a filter option separator.
-    assert r'ass=/tmp/od\:d/karaoke.ass' in command
+    assert r'ass=/tmp/od\:d/karaoke.ass' in graph
     assert command[command.index('-c:v') + 1] == 'libx264'
     assert command[command.index('-c:a') + 1] == 'aac'
-    assert {'-shortest', '-pix_fmt'} <= set(command)
+    assert {'-shortest', '-pix_fmt', '[v]'} <= set(command)
+
+
+def test_the_audio_command_embeds_the_machine_transcript() -> None:
+    clip = Clip(start_ms=START_MS, end_ms=END_MS, preset=ClipPreset.NIGHT)
+
+    command = rendering.ffmpeg_audio_command(
+        audio_path=Path('/tmp/source-audio'),
+        output_path=Path('/tmp/clip.m4a'),
+        clip=clip,
+    )
+
+    assert command[command.index('-ss') + 1] == '5.000'
+    assert command[command.index('-to') + 1] == '25.000'
+    # Audio only: no video encoder, no colour source, no subtitle filter.
+    assert '-filter_complex' not in command
+    assert '-c:v' not in command
+    assert command[command.index('-c:a') + 1] == 'aac'
+    assert any(part.startswith('lyrics=') for part in command)
+    # The transcribed words ride along in the metadata, marked as ASR output.
+    assert any(rendering.MACHINE_TRANSCRIPT_MARK in part for part in command)
 
 
 def test_every_clip_carries_a_mark_the_deployment_can_set() -> None:

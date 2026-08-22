@@ -21,12 +21,10 @@ from pytest_django.fixtures import Settings
 from api.tests.factories import (  # noqa: F401
     api,
     archive,
-    embedded_archive,
     make_audio_asset,
     reset_throttles,
 )
 from corpus.arabic import normalize_for_index
-from corpus.embeddings import StubEmbedder
 from corpus.models import (
     Chunk,
     Correction,
@@ -120,12 +118,6 @@ def build_passages() -> Passages:
             )
         )
     Chunk.objects.bulk_create(chunks)
-    # The pipeline embeds the normalized form; so does the rebuild after an
-    # approval, so the fixture has to agree or every chunk looks "changed".
-    vectors = StubEmbedder().embed_passages([chunk.text_normalized for chunk in chunks])
-    for chunk, vector in zip(chunks, vectors, strict=True):
-        chunk.embedding = vector
-    Chunk.objects.bulk_update(chunks, ["embedding"])
     return Passages(segment=segment, transcript=transcript, chunks=chunks)
 
 

@@ -22,7 +22,9 @@
   --color-accent:      #1a6b4a;
   --color-accent-bg:   #d4eee3;
 
-  /* Height of the fixed player bar — pages reserve this much bottom room. */
+  /* Fallback height of the fixed player bar — pages reserve this much
+     bottom room. While a track is loaded PlayerBar.tsx measures itself
+     and overwrites this var on <html> with its exact pixel height. */
   --player-bar-height: 4.5rem;
 }
 
@@ -134,6 +136,13 @@ body {
   padding-block-end: calc(var(--player-bar-height) + 2rem);
 }
 
+/* The padding grows/shrinks as the measured bar height lands. */
+@media (prefers-reduced-motion: no-preference) {
+  .page-shell {
+    transition: padding-block-end 0.25s ease;
+  }
+}
+
 /* Quranic material — Amiri Quran needs room for harakat above and below. */
 .quran-text {
   font-family: var(--font-quran);
@@ -155,6 +164,1776 @@ body {
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
   text-decoration-color: var(--color-ink-faint);
+}
+
+/* ============================================================
+   Waveform entrance animation (landing page brand mark).
+   Gated by prefers-reduced-motion; the bars scale up in
+   sequence, one frame each.
+   ============================================================ */
+@media (prefers-reduced-motion: no-preference) {
+  .waveform-entrance .waveform-bar {
+    animation: waveIn 400ms ease-out both;
+    transform-origin: bottom center;
+  }
+}
+
+@keyframes waveIn {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* ============================================================
+   Landing page — brand exception (DESIGN.md, "Landing page")
+   Gold brand palette + waveform motif, scoped to src/app/page.tsx.
+   Light values are verbatim from the Claude Design mockup.
+   ============================================================ */
+.landing {
+  --landing-bg:          #ffffff;
+  --landing-ink:         #2b2a26;
+  --landing-ink-2:       #5f5b52; /* tagline */
+  --landing-ink-3:       #75716a; /* chips */
+  --landing-ink-4:       #a19b8e; /* footer note */
+  --landing-placeholder: #a8a090;
+
+  --landing-gold:        #b8934a;
+  --landing-gold-hover:  #a98336;
+  --landing-gold-focus:  #c9a45c;
+  --landing-gold-strip:  rgba(184, 147, 74, 0.14);
+
+  /* Islamic manuscript accents — deep emerald to partner the gold. */
+  --landing-emerald:       #17483a;
+  --landing-emerald-ink:   #0f3228;
+  --landing-gold-soft:     rgba(184, 147, 74, 0.10);
+  --landing-gold-veil:     rgba(184, 147, 74, 0.06);
+  --landing-pattern:       rgba(184, 147, 74, 0.30);
+  --landing-pattern-faint: rgba(184, 147, 74, 0.14);
+
+  --landing-box-bg:      #ffffff;
+  --landing-box-border:  #e0d6be;
+  --landing-chip-bg:     #f8f7f3;
+  --landing-chip-border: #e9e7e0;
+  --landing-chip-ink-hover: #55534c;
+
+  --landing-btn-ink:     #ffffff;
+  --landing-shadow:      0 20px 55px rgba(64, 54, 30, 0.1);
+  --landing-ring:        0 0 0 4px rgba(201, 164, 92, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .landing {
+    --landing-bg:          #101312;
+    --landing-ink:         #f0ede8;
+    --landing-ink-2:       #a8a49d;
+    --landing-ink-3:       #8f8b83;
+    --landing-ink-4:       #6a675f;
+    --landing-placeholder: #6a675f;
+
+    --landing-gold:        #c9a45c;
+    --landing-gold-hover:  #d8b56e;
+    --landing-gold-focus:  #c9a45c;
+    --landing-gold-strip:  rgba(201, 164, 92, 0.1);
+
+    --landing-emerald:       #2f7a5f;
+    --landing-emerald-ink:   #7fc7a8;
+    --landing-gold-soft:     rgba(201, 164, 92, 0.08);
+    --landing-gold-veil:     rgba(201, 164, 92, 0.05);
+    --landing-pattern:       rgba(201, 164, 92, 0.18);
+    --landing-pattern-faint: rgba(201, 164, 92, 0.10);
+
+    --landing-box-bg:      #1e2220;
+    --landing-box-border:  #45402f;
+    --landing-chip-bg:     #181b19;
+    --landing-chip-border: #2c302d;
+    --landing-chip-ink-hover: #d5d1c9;
+
+    --landing-btn-ink:     #16130d;
+    --landing-shadow:      0 20px 55px rgba(0, 0, 0, 0.45);
+    --landing-ring:        0 0 0 4px rgba(201, 164, 92, 0.25);
+  }
+}
+
+:root[data-theme="dark"] .landing {
+  --landing-bg:          #101312;
+  --landing-ink:         #f0ede8;
+  --landing-ink-2:       #a8a49d;
+  --landing-ink-3:       #8f8b83;
+  --landing-ink-4:       #6a675f;
+  --landing-placeholder: #6a675f;
+
+  --landing-gold:        #c9a45c;
+  --landing-gold-hover:  #d8b56e;
+  --landing-gold-focus:  #c9a45c;
+  --landing-gold-strip:  rgba(201, 164, 92, 0.1);
+
+  --landing-emerald:       #2f7a5f;
+  --landing-emerald-ink:   #7fc7a8;
+  --landing-gold-soft:     rgba(201, 164, 92, 0.08);
+  --landing-gold-veil:     rgba(201, 164, 92, 0.05);
+  --landing-pattern:       rgba(201, 164, 92, 0.18);
+  --landing-pattern-faint: rgba(201, 164, 92, 0.10);
+
+  --landing-box-bg:      #1e2220;
+  --landing-box-border:  #45402f;
+  --landing-chip-bg:     #181b19;
+  --landing-chip-border: #2c302d;
+  --landing-chip-ink-hover: #d5d1c9;
+
+  --landing-btn-ink:     #16130d;
+  --landing-shadow:      0 20px 55px rgba(0, 0, 0, 0.45);
+  --landing-ring:        0 0 0 4px rgba(201, 164, 92, 0.25);
+}
+
+/*
+ * The search hero. The focused state lives on the container, not the input:
+ * the mockup's focus ring is a border-colour change + soft gold halo around
+ * the whole box (this is the input's visible focus indicator — the input
+ * itself suppresses the global outline).
+ */
+.landing-search {
+  background: var(--landing-box-bg);
+  border: 1px solid var(--landing-box-border);
+  box-shadow: var(--landing-shadow);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.landing-search:focus-within {
+  border-color: var(--landing-gold-focus);
+  box-shadow: var(--landing-shadow), var(--landing-ring);
+}
+
+/* The container's border + ring above is the input's focus indicator. */
+.landing-search input:focus-visible {
+  outline: none;
+}
+
+/* Keyboard focus rings stay visible on the landing, but in the brand gold. */
+.landing :focus-visible {
+  outline-color: var(--landing-gold);
+}
+
+/* ============================================================
+   Landing page — Islamic ornament (geometric lattice, mihrab,
+   ornamental rules). Decorative only; all aria-hidden in markup.
+   ============================================================ */
+
+/* The star lattice pattern is stroked with `currentColor`; set the colour on
+   the wrapper so the whole SVG inherits it. */
+.landing-pattern {
+  color: var(--landing-pattern);
+}
+
+/* Soft radial veil behind the mihrab — a lighter spot to sit the search on. */
+.landing-halo {
+  background: radial-gradient(
+    closest-side,
+    var(--landing-gold-soft),
+    transparent 72%
+  );
+}
+
+/* Vertical gentle rise for hero copy. Gated below by reduced-motion. */
+.landing-rise {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-rise {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: landingRise 700ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  }
+}
+
+@keyframes landingRise {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Eight-point star medallion used for surah numbers and ornamental bullets. */
+.landing-medallion {
+  color: var(--landing-gold);
+}
+
+/* Segmented kind filter inside the search box. */
+.landing-kind {
+  display: inline-flex;
+  background: var(--landing-chip-bg);
+  border: 1px solid var(--landing-chip-border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.landing-kind button {
+  border: 0;
+  background: transparent;
+  color: var(--landing-ink-3);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.landing-kind button[aria-pressed="true"] {
+  background: var(--landing-gold);
+  color: var(--landing-btn-ink);
+}
+
+.landing-kind button:focus-visible {
+  outline: 2px solid var(--landing-gold);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Landing page ornament — end
+   ============================================================ */
+
+/* ============================================================
+   Verse player — Sharawy Player exception (DESIGN.md)
+   Gold/cream palette from the approved "Sharawy Player" mockup,
+   scoped to /surah/[n]/ayah/[m]: `.verse-theme` sits on the page
+   root (server-rendered, no flash), `body[data-verse-theme]` is
+   set client-side so the fixed PlayerBar inherits the accent.
+   ============================================================ */
+.verse-theme,
+body[data-verse-theme] {
+  --verse-gold:            #b8934a;
+  --verse-gold-hover:      #a98336;
+  --verse-gold-soft:       #c9a45c;
+  --verse-gold-ink:        #ffffff;
+  --verse-deep:            #8a6b2f;
+  --verse-badge-bg:        #f3e9d2;
+  --verse-card-bg:         #fbf8f0;
+  --verse-card-border:     #e8dcbe;
+  --verse-quran-ink:       #4a3a18;
+  --verse-hint-border:     #e0d6be;
+  --verse-toolbar-bg:      #2b2a26;
+  --verse-toolbar-ink:     #f2e8d2;
+  --verse-toolbar-divider: #3f3d36;
+  --verse-selection:       rgba(201, 164, 92, 0.32);
+
+  /* Generic tokens remapped so shared chrome (PlayerBar range accent,
+     focus rings, active-ayah tint) turns gold inside the scope. */
+  --color-accent:    var(--verse-gold);
+  --color-accent-bg: var(--verse-badge-bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .verse-theme,
+  :root:not([data-theme="light"]) body[data-verse-theme] {
+    --verse-gold:            #c9a45c;
+    --verse-gold-hover:      #d8b56e;
+    --verse-gold-soft:       #c9a45c;
+    --verse-gold-ink:        #16130d;
+    --verse-deep:            #d8b56e;
+    --verse-badge-bg:        rgba(201, 164, 92, 0.14);
+    --verse-card-bg:         #221f18;
+    --verse-card-border:     #45402f;
+    --verse-quran-ink:       #ead9ac;
+    --verse-hint-border:     #45402f;
+    --verse-toolbar-bg:      #16130d;
+    --verse-toolbar-ink:     #f2e8d2;
+    --verse-toolbar-divider: #3f3d36;
+    --verse-selection:       rgba(201, 164, 92, 0.25);
+  }
+}
+
+:root[data-theme="dark"] .verse-theme,
+:root[data-theme="dark"] body[data-verse-theme] {
+  --verse-gold:            #c9a45c;
+  --verse-gold-hover:      #d8b56e;
+  --verse-gold-soft:       #c9a45c;
+  --verse-gold-ink:        #16130d;
+  --verse-deep:            #d8b56e;
+  --verse-badge-bg:        rgba(201, 164, 92, 0.14);
+  --verse-card-bg:         #221f18;
+  --verse-card-border:     #45402f;
+  --verse-quran-ink:       #ead9ac;
+  --verse-hint-border:     #45402f;
+  --verse-toolbar-bg:      #16130d;
+  --verse-toolbar-ink:     #f2e8d2;
+  --verse-toolbar-divider: #3f3d36;
+  --verse-selection:       rgba(201, 164, 92, 0.25);
+}
+
+/* The signature highlight goes solid gold on this page (mockup). */
+.verse-theme .word-active {
+  background-color: var(--verse-gold);
+  color: var(--verse-gold-ink);
+}
+
+/* Drag-selection tint — a fill, distinct from the correction underline. */
+.verse-word-selected {
+  background-color: var(--verse-selection);
+  border-radius: 3px;
+}
+
+/* Verified ayah card — always Tanzil text in the Quran face (rule 1). */
+.ayah-card {
+  background: var(--verse-card-bg);
+  border: 1px solid var(--verse-card-border);
+  border-radius: 14px;
+  padding: 1.5rem 1.75rem;
+  text-align: center;
+}
+
+/* Whole-card active state — the degrade when word mapping is too sparse. */
+.ayah-card-active {
+  box-shadow: 0 0 0 2px var(--verse-gold);
+}
+
+/* Keyboard focus rings stay visible, in the page's gold. */
+.verse-theme :focus-visible {
+  outline-color: var(--verse-gold);
+}
+
+/* ============================================================
+   Surah index — Islamic card grid
+   Gold accent + eight-point-star motif, scoped to /surahs.
+   Reuses the landing palette (DESIGN.md "brand exception").
+   ============================================================ */
+.surahs {
+  --surah-gold:        #b8934a;
+  --surah-gold-soft:   #c9a45c;
+  --surah-gold-deep:   #8a6b2f;
+  --surah-gold-ink:    #ffffff;
+  --surah-badge-bg:    var(--color-bg-subtle);
+  --surah-glow:        rgba(184, 147, 74, 0.16);
+  --surah-pattern:     rgba(184, 147, 74, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .surahs {
+    --surah-gold:        #c9a45c;
+    --surah-gold-soft:   #d8b56e;
+    --surah-gold-deep:   #d8b56e;
+    --surah-gold-ink:    #16130d;
+    --surah-badge-bg:    rgba(201, 164, 92, 0.1);
+    --surah-glow:        rgba(201, 164, 92, 0.12);
+  }
+}
+
+:root[data-theme="dark"] .surahs {
+  --surah-gold:        #c9a45c;
+  --surah-gold-soft:   #d8b56e;
+  --surah-gold-deep:   #d8b56e;
+  --surah-gold-ink:    #16130d;
+  --surah-badge-bg:    rgba(201, 164, 92, 0.1);
+  --surah-glow:        rgba(201, 164, 92, 0.12);
+}
+
+/* Faint overlapping-circle lattice behind the grid, like a mashrabiya screen. */
+.surahs-bg {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23b8934a' stroke-opacity='0.055'%3E%3Ccircle cx='0' cy='0' r='17.6'/%3E%3Ccircle cx='56' cy='0' r='17.6'/%3E%3Ccircle cx='0' cy='56' r='17.6'/%3E%3Ccircle cx='56' cy='56' r='17.6'/%3E%3Ccircle cx='28' cy='28' r='17.6'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Search pill — border + gold halo live on the wrapper, like the landing hero. */
+.surah-search {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.surah-search:focus-within {
+  border-color: var(--surah-gold-soft);
+  box-shadow: 0 0 0 4px var(--surah-glow);
+}
+
+.surah-search input:focus-visible {
+  outline: none;
+}
+
+.surah-search-icon {
+  transition: color 0.2s;
+}
+
+.surah-search:focus-within .surah-search-icon {
+  color: var(--surah-gold);
+}
+
+/* One surah card. */
+.surah-card {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surah-gold) 4%, var(--color-surface)) 0%,
+    var(--color-surface) 55%
+  );
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  overflow: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease,
+    background 0.3s ease;
+}
+
+/* Inner hairline frame — the "double border" of an illuminated margin. */
+.surah-card::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid var(--surah-pattern);
+  border-radius: 0.7rem;
+  pointer-events: none;
+}
+
+.surah-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--surah-gold-soft);
+  box-shadow: 0 14px 34px var(--surah-glow);
+}
+
+.surah-card:hover::after {
+  border-color: color-mix(in srgb, var(--surah-gold) 30%, transparent);
+}
+
+/* Corner flourishes — faint by default, catch gold light on hover. */
+.surah-corner {
+  opacity: 0.35;
+  transition: opacity 0.3s ease;
+}
+
+.surah-card:hover .surah-corner {
+  opacity: 0.9;
+}
+
+/* Soft radial gold glow behind the rosette, revealed on hover. */
+.surah-card-topglow {
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--surah-gold) 16%, transparent),
+    transparent
+  );
+}
+
+/* "عرض السورة" affordance — always present, comes alive on hover. */
+.surah-card-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 0.55rem;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-ink-faint);
+  transition: color 0.25s ease;
+}
+
+.surah-card-go svg {
+  transition: transform 0.25s ease;
+}
+
+.surah-card:hover .surah-card-go {
+  color: var(--surah-gold-deep);
+}
+
+.surah-card:hover .surah-card-go svg {
+  transform: translateX(-3px);
+}
+
+.surah-badge {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--surah-badge-bg);
+  color: var(--color-ink-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.surah-badge--gold {
+  border-color: color-mix(in srgb, var(--surah-gold) 40%, transparent);
+  background: color-mix(in srgb, var(--surah-gold) 12%, transparent);
+  color: var(--surah-gold-deep);
+}
+
+/* Madinan surahs use the app accent green; Makkan surahs keep the gold. */
+.surah-badge--green {
+  border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
+}
+
+/* Staggered entrance. `backwards` (not `both`) leaves the final state to the
+   natural cascade, so the hover lift transition keeps working afterwards. */
+@keyframes surahCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .surah-card {
+    animation: surahCardIn 450ms ease-out backwards;
+  }
+}
+
+/* ============================================================
+   Surah page — mushaf illumination exception (DESIGN.md)
+   The branding gold/emerald manuscript language (landing,
+   surah index, verse player) extended to /surah/[n]: an
+   ornamental page-opening hero, rosette verse seals, gilded
+   segment chips and a staggered entrance. Fully scoped to
+   `.surah-page` — nothing here leaks into other routes.
+   ============================================================ */
+.surah-page {
+  --sp-gold:        #b8934a;
+  --sp-gold-soft:   #c9a45c;
+  --sp-gold-deep:   #8a6b2f;
+  --sp-gold-ink:    #ffffff;
+  --sp-card:        #fbf8f0;
+  --sp-card-border: #e8dcbe;
+  --sp-veil:        rgba(184, 147, 74, 0.06);
+  --sp-glow:        rgba(184, 147, 74, 0.22);
+  --sp-pattern:     rgba(184, 147, 74, 0.30);
+  --sp-quran-ink:   #3f3626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .surah-page {
+    --sp-gold:        #c9a45c;
+    --sp-gold-soft:   #d8b56e;
+    --sp-gold-deep:   #d8b56e;
+    --sp-gold-ink:    #16130d;
+    --sp-card:        #1c1a14;
+    --sp-card-border: #45402f;
+    --sp-veil:        rgba(201, 164, 92, 0.07);
+    --sp-glow:        rgba(201, 164, 92, 0.16);
+    --sp-pattern:     rgba(201, 164, 92, 0.20);
+    --sp-quran-ink:   #eadfc5;
+  }
+}
+
+:root[data-theme="dark"] .surah-page {
+  --sp-gold:        #c9a45c;
+  --sp-gold-soft:   #d8b56e;
+  --sp-gold-deep:   #d8b56e;
+  --sp-gold-ink:    #16130d;
+  --sp-card:        #1c1a14;
+  --sp-card-border: #45402f;
+  --sp-veil:        rgba(201, 164, 92, 0.07);
+  --sp-glow:        rgba(201, 164, 92, 0.16);
+  --sp-pattern:     rgba(201, 164, 92, 0.20);
+  --sp-quran-ink:   #eadfc5;
+}
+
+/* Keyboard rings follow the page's gold inside the scope. */
+.surah-page :focus-visible {
+  outline-color: var(--sp-gold);
+}
+
+/* The page-opening hero — the illuminated panel of a mushaf opening page. */
+.surah-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  text-align: center;
+  padding: 3.25rem 1.5rem 2.25rem;
+  border: 1px solid var(--sp-card-border);
+  border-radius: 20px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--sp-gold) 8%, transparent),
+      transparent 62%
+    ),
+    var(--sp-card);
+}
+
+/* Inner hairline — the illuminated margin's double frame. */
+.surah-hero::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid color-mix(in srgb, var(--sp-gold) 26%, transparent);
+  border-radius: 14px;
+  pointer-events: none;
+}
+
+/* Star lattice bands crowning the hero (and mirrored at its foot), fading
+   out like a vignette. The inline SVG strokes currentColor. */
+.surah-hero-lattice {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  width: 100%;
+  height: 3rem;
+  color: var(--sp-gold);
+  opacity: 0.16;
+  mask-image: linear-gradient(to bottom, #000 15%, transparent);
+  pointer-events: none;
+}
+
+.surah-hero-lattice--bottom {
+  top: auto;
+  bottom: 0;
+  transform: scaleY(-1);
+  opacity: 0.1;
+}
+
+/* Soft radial wash behind the surah name. */
+.surah-hero-halo {
+  position: absolute;
+  inset-inline: 12%;
+  top: -22%;
+  height: 75%;
+  background: radial-gradient(
+    closest-side,
+    var(--sp-glow),
+    transparent 72%
+  );
+  pointer-events: none;
+}
+
+.surah-hero-corner {
+  position: absolute;
+  width: 1.4rem;
+  height: 1.4rem;
+  color: var(--sp-gold);
+  opacity: 0.55;
+}
+
+/* Badges under the ornament divider — same language as the surah index. */
+.sp-badge {
+  display: inline-block;
+  padding: 0.15rem 0.75rem;
+  border: 1px solid var(--sp-card-border);
+  border-radius: 9999px;
+  background: var(--sp-veil);
+  color: var(--color-ink-muted);
+  font-size: 0.72rem;
+  line-height: 1.7;
+}
+
+.sp-badge--gold {
+  border-color: color-mix(in srgb, var(--sp-gold) 40%, transparent);
+  background: color-mix(in srgb, var(--sp-gold) 12%, transparent);
+  color: var(--sp-gold-deep);
+}
+
+/* Hairline rules flanking the basmala / page indicator. */
+.sp-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to left, transparent, var(--sp-pattern));
+}
+
+.sp-rule--mirror {
+  transform: scaleX(-1);
+}
+
+/* One ayah row. Hover reveals the parchment card; the active verse stays lit. */
+.surah-ayah {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 1.1rem 1.1rem;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+.surah-ayah:hover {
+  background: var(--sp-card);
+  border-color: var(--sp-card-border);
+  box-shadow: 0 12px 30px rgba(120, 96, 40, 0.1);
+  transform: translateY(-2px);
+}
+
+.surah-ayah--active,
+.surah-ayah--active:hover {
+  background: var(--sp-veil);
+  border-color: var(--sp-gold-soft);
+  box-shadow: 0 0 0 1px var(--sp-gold-soft);
+}
+
+.surah-ayah-text {
+  color: var(--sp-quran-ink);
+}
+
+.surah-ayah-mark {
+  color: var(--sp-gold);
+  letter-spacing: -0.05em;
+}
+
+/* The rosette verse seal — concentric circles, a dotted ring and the
+   Arabic-Indic number, drawn inline like a mushaf verse marker. */
+.ayah-seal {
+  position: relative;
+  flex: none;
+  width: 2.9rem;
+  height: 2.9rem;
+  margin-top: 0.3rem;
+  color: var(--sp-gold);
+  transition: transform 0.3s ease;
+}
+
+.ayah-seal svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--sp-gold);
+}
+
+.ayah-seal .seal-outer {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.ayah-seal .seal-inner {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.8;
+  opacity: 0.6;
+}
+
+.ayah-seal .seal-dots {
+  fill: currentColor;
+  opacity: 0.75;
+  transition: transform 0.5s ease;
+  transform-origin: 24px 24px;
+}
+
+.ayah-seal .seal-body {
+  fill: var(--sp-gold);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.ayah-seal-num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-quran);
+  font-size: 1rem;
+  line-height: 1;
+  padding-bottom: 0.2rem;
+  color: var(--sp-gold-deep);
+  transition: color 0.25s ease;
+}
+
+.surah-ayah:hover .ayah-seal {
+  transform: scale(1.06);
+}
+
+.surah-ayah:hover .ayah-seal .seal-dots {
+  transform: rotate(22.5deg);
+}
+
+.surah-ayah:hover .ayah-seal .seal-body {
+  opacity: 0.14;
+}
+
+.surah-ayah--active .ayah-seal .seal-body {
+  opacity: 1;
+}
+
+.surah-ayah--active .ayah-seal-num {
+  color: var(--sp-gold-ink);
+}
+
+/* Quiet meta links under the verse text. */
+.sp-link {
+  color: var(--color-ink-faint);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: color-mix(in srgb, var(--sp-gold) 35%, transparent);
+  transition: color 0.2s ease;
+}
+
+.sp-link:hover {
+  color: var(--sp-gold-deep);
+}
+
+/* The gilded "استمع" segment chip. */
+.sp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--sp-gold) 32%, transparent);
+  border-radius: 9999px;
+  background: var(--sp-veil);
+  color: var(--sp-gold-deep);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.sp-chip:hover {
+  background: var(--sp-gold);
+  border-color: var(--sp-gold);
+  color: var(--sp-gold-ink);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px var(--sp-glow);
+}
+
+/* Prev/next surah cards at the page foot. */
+.surah-nav-card {
+  position: relative;
+  display: block;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+.surah-nav-card:hover {
+  border-color: var(--sp-gold-soft);
+  background: var(--sp-card);
+  box-shadow: 0 12px 28px var(--sp-glow);
+  transform: translateY(-2px);
+}
+
+.surah-nav-card .nav-name {
+  color: var(--sp-gold-deep);
+}
+
+.surah-nav-card .nav-chevron {
+  flex: none;
+  color: var(--color-ink-faint);
+  transition: color 0.25s ease, transform 0.25s ease;
+}
+
+.surah-nav-card:hover .nav-chevron {
+  color: var(--sp-gold);
+}
+
+.surah-nav-card--prev:hover .nav-chevron {
+  transform: translateX(3px);
+}
+
+.surah-nav-card--next:hover .nav-chevron {
+  transform: translateX(-3px);
+}
+
+/* Staggered page entrance. `backwards` so hover transitions stay live
+   afterwards (same pattern as .surah-card). */
+@keyframes surahAyahIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .surah-hero {
+    animation: surahAyahIn 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+
+  .surah-basmala-wrap {
+    animation: surahAyahIn 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) 0.18s backwards;
+  }
+
+  .surah-ayah {
+    animation: surahAyahIn 0.5s ease-out backwards;
+  }
+}
+
+/* ============================================================
+   Listen page — "gilded listening room" exception (DESIGN.md)
+   /listen/[segmentId]: the standalone listening page joins the
+   landing, surah index, surah page and verse player as a scoped
+   brand exception. `.listen-page` wraps the page <main> server-side
+   (no flash of unstyled tokens); inside it the shared chrome
+   (`.word-active`, focus rings, chips, the offline accent) re-tints
+   to manuscript gold, matching the approved gilded language.
+   ============================================================ */
+.listen-page {
+  --lp-gold:        #b8934a;
+  --lp-gold-soft:   #c9a45c;
+  --lp-gold-deep:   #8a6b2f;
+  --lp-gold-ink:    #ffffff;
+  --lp-card:        #fbf8f0;
+  --lp-card-border: #e8dcbe;
+  --lp-veil:        rgba(184, 147, 74, 0.06);
+  --lp-glow:        rgba(184, 147, 74, 0.22);
+  --lp-pattern:     rgba(184, 147, 74, 0.30);
+  --lp-quran-ink:   #3f3626;
+
+  /* Generic tokens remapped so shared chrome turns gold in scope. */
+  --color-accent:    var(--lp-gold);
+  --color-accent-bg: var(--lp-veil);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .listen-page {
+    --lp-gold:        #c9a45c;
+    --lp-gold-soft:   #d8b56e;
+    --lp-gold-deep:   #d8b56e;
+    --lp-gold-ink:    #16130d;
+    --lp-card:        #1c1a14;
+    --lp-card-border: #45402f;
+    --lp-veil:        rgba(201, 164, 92, 0.07);
+    --lp-glow:        rgba(201, 164, 92, 0.16);
+    --lp-pattern:     rgba(201, 164, 92, 0.20);
+    --lp-quran-ink:   #eadfc5;
+  }
+}
+
+:root[data-theme="dark"] .listen-page {
+  --lp-gold:        #c9a45c;
+  --lp-gold-soft:   #d8b56e;
+  --lp-gold-deep:   #d8b56e;
+  --lp-gold-ink:    #16130d;
+  --lp-card:        #1c1a14;
+  --lp-card-border: #45402f;
+  --lp-veil:        rgba(201, 164, 92, 0.07);
+  --lp-glow:        rgba(201, 164, 92, 0.16);
+  --lp-pattern:     rgba(201, 164, 92, 0.20);
+  --lp-quran-ink:   #eadfc5;
+}
+
+/* Keyboard rings follow the page's gold inside the scope. */
+.listen-page :focus-visible {
+  outline-color: var(--lp-gold);
+}
+
+/* The signature highlight goes solid gold on this page, as on the verse
+   player (with `--lp-veil` left as the idle background for hover states). */
+.listen-page .word-active {
+  background-color: var(--lp-gold);
+  color: var(--lp-gold-ink);
+}
+
+/* The page-opening hero — the illuminated panel of a mushaf opening page. */
+.listen-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  text-align: center;
+  padding: 2.75rem 1.5rem 2.25rem;
+  border: 1px solid var(--lp-card-border);
+  border-radius: 20px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lp-gold) 8%, transparent),
+      transparent 62%
+    ),
+    var(--lp-card);
+}
+
+/* Inner hairline — the illuminated margin's double frame. */
+.listen-hero::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid color-mix(in srgb, var(--lp-gold) 26%, transparent);
+  border-radius: 14px;
+  pointer-events: none;
+}
+
+/* Star lattice bands crowning the hero (and mirrored at its foot). */
+.listen-hero-lattice {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  width: 100%;
+  height: 3rem;
+  color: var(--lp-gold);
+  opacity: 0.16;
+  mask-image: linear-gradient(to bottom, #000 15%, transparent);
+  pointer-events: none;
+}
+
+.listen-hero-lattice--bottom {
+  top: auto;
+  bottom: 0;
+  transform: scaleY(-1);
+  opacity: 0.1;
+}
+
+/* Soft radial wash behind the title. */
+.listen-hero-halo {
+  position: absolute;
+  inset-inline: 12%;
+  top: -22%;
+  height: 75%;
+  background: radial-gradient(
+    closest-side,
+    var(--lp-glow),
+    transparent 72%
+  );
+  pointer-events: none;
+}
+
+.listen-hero-corner {
+  position: absolute;
+  width: 1.4rem;
+  height: 1.4rem;
+  color: var(--lp-gold);
+  opacity: 0.55;
+}
+
+/* Kicker — kind + surah + ayah range in gilded small caps. */
+.listen-kicker {
+  position: relative;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--lp-gold-deep);
+}
+
+.listen-kicker a {
+  transition: color 0.2s ease;
+}
+
+.listen-kicker a:hover {
+  color: var(--lp-gold);
+}
+
+/* The segment title — classical Amiri, reading perfectly under the label. */
+.listen-title {
+  position: relative;
+  margin-top: 0.45rem;
+  font-size: 1.75rem;
+  line-height: 1.6;
+  color: var(--lp-quran-ink);
+  text-wrap: balance;
+}
+
+@media (min-width: 640px) {
+  .listen-title { font-size: 2.25rem; }
+}
+
+/* Hairline rules flanking the eight-point divider. */
+.listen-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to left, transparent, var(--lp-pattern));
+}
+
+.listen-rule--mirror {
+  transform: scaleX(-1);
+}
+
+/* Gold-tinted meta badges under the divider. */
+.listen-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.75rem;
+  border: 1px solid var(--lp-card-border);
+  border-radius: 9999px;
+  background: var(--lp-veil);
+  color: var(--color-ink-muted);
+  font-size: 0.72rem;
+  line-height: 1.7;
+}
+
+.listen-badge--gold {
+  border-color: color-mix(in srgb, var(--lp-gold) 40%, transparent);
+  background: color-mix(in srgb, var(--lp-gold) 12%, transparent);
+  color: var(--lp-gold-deep);
+}
+
+/* Gilded action chips — share/clip/offline/correction affordances. */
+.listen-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--lp-gold) 32%, transparent);
+  border-radius: 9999px;
+  background: var(--lp-veil);
+  color: var(--lp-gold-deep);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.listen-chip:hover {
+  background: var(--lp-gold);
+  border-color: var(--lp-gold);
+  color: var(--lp-gold-ink);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px var(--lp-glow);
+}
+
+.listen-chip:active {
+  transform: translateY(0);
+}
+
+/* The committed state ("saved", "copied") — a solid gold fill. */
+.listen-chip--active,
+.listen-chip--active:hover {
+  background: var(--lp-gold);
+  border-color: var(--lp-gold);
+  color: var(--lp-gold-ink);
+}
+
+.listen-chip[disabled] {
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+/* The verified Tanzil ayah card — illuminated, like a mushaf margin. */
+.listen-ayah-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-block: 1.75rem;
+  padding: 1.75rem 1.25rem 1.15rem;
+  text-align: center;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lp-gold) 7%, transparent),
+      transparent 58%
+    ),
+    var(--lp-card);
+  border: 1px solid var(--lp-card-border);
+  border-radius: 18px;
+}
+
+.listen-ayah-card::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid color-mix(in srgb, var(--lp-gold) 22%, transparent);
+  border-radius: 13px;
+  pointer-events: none;
+}
+
+/* The machine-transcript marker note — a gilded, quiet band. */
+.listen-note {
+  margin-block: 1.5rem 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--lp-card-border);
+  border-radius: 14px;
+  background: var(--lp-veil);
+}
+
+/* The transcript scroll pane — a parchment inset within the gold frame. */
+.listen-transcript {
+  overflow: hidden;
+  border: 1px solid var(--lp-card-border);
+  border-radius: 16px;
+  background: var(--lp-card);
+}
+
+.listen-transcript-scroll {
+  scrollbar-color: var(--lp-gold-soft) transparent;
+}
+
+/* Transcript words breathe on hover; the active word stays solid gold. */
+.listen-word {
+  border-radius: 4px;
+  padding: 0 2px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.listen-word:hover:not(.word-active) {
+  background: color-mix(in srgb, var(--lp-gold) 14%, transparent);
+}
+
+/* The "return to current position" pill — matches the gilded chips. */
+.listen-follow-pill {
+  border: 1px solid color-mix(in srgb, var(--lp-gold) 45%, transparent);
+  background: var(--color-surface);
+  box-shadow: 0 8px 22px var(--lp-glow);
+}
+
+/* Staggered page entrance, gated by reduced motion. `backwards` so the
+   hover transitions below stay live after the animation finishes. */
+@keyframes listenIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .listen-hero {
+    animation: listenIn 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+
+  .listen-ayah-card {
+    animation: listenIn 0.55s ease-out 0.15s backwards;
+  }
+
+  .listen-body {
+    animation: listenIn 0.5s ease-out 0.25s backwards;
+  }
+}
+
+/* ============================================================
+   Player bar — gilded global transport (DESIGN.md).
+   Owns its gold tokens scoped to `.player-bar` so it reads the
+   same on every route; the seek ribbon floats on the bar's top
+   edge and the bar's measured pixel height is written back into
+   --player-bar-height by PlayerBar.tsx so pages always reserve
+   exactly the right room.
+   ============================================================ */
+.player-bar {
+  --pb-gold:      #b8934a;
+  --pb-gold-soft: #c9a45c;
+  --pb-deep:      #8a6b2f;
+  --pb-ink:       #ffffff;
+  --pb-glow:      rgba(184, 147, 74, 0.35);
+  --pb-track:     color-mix(in srgb, var(--color-ink) 12%, transparent);
+
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid color-mix(in srgb, var(--pb-gold) 26%, var(--color-border));
+  box-shadow: 0 -12px 32px rgba(20, 16, 8, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .player-bar {
+    --pb-gold:      #c9a45c;
+    --pb-gold-soft: #d8b56e;
+    --pb-deep:      #d8b56e;
+    --pb-ink:       #16130d;
+    --pb-glow:      rgba(201, 164, 92, 0.3);
+    box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.45);
+  }
+}
+
+:root[data-theme="dark"] .player-bar {
+  --pb-gold:      #c9a45c;
+  --pb-gold-soft: #d8b56e;
+  --pb-deep:      #d8b56e;
+  --pb-ink:       #16130d;
+  --pb-glow:      rgba(201, 164, 92, 0.3);
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* Gold hairline crowning the bar, fading at the edges. */
+.player-bar::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    to left,
+    transparent,
+    var(--pb-gold) 18%,
+    var(--pb-gold-soft) 50%,
+    var(--pb-gold) 82%,
+    transparent
+  );
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.player-bar :focus-visible {
+  outline-color: var(--pb-gold);
+}
+
+/* The seek ribbon — a range input stretched over the bar's top edge. Its
+   played fraction is fed through --seek-pct (0–100) from the component;
+   the gradient anchors at the right because the document is RTL. */
+.player-seek {
+  position: absolute;
+  inset-inline: 0;
+  top: -8px;
+  display: block;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  --seek-pct: 0%;
+}
+
+.player-seek::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to left,
+    var(--pb-gold) var(--seek-pct),
+    var(--pb-track) var(--seek-pct)
+  );
+}
+
+.player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin-top: -5px; /* (track 5px - thumb 15px) / 2 */
+  border-radius: 9999px;
+  background: var(--pb-gold);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 1px 6px var(--pb-glow);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.player-seek::-moz-range-track {
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--pb-track);
+}
+
+.player-seek::-moz-range-progress {
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--pb-gold);
+}
+
+.player-seek::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 9999px;
+  background: var(--pb-gold);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 1px 6px var(--pb-glow);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.player-seek:hover::-webkit-slider-thumb,
+.player-seek:focus-visible::-webkit-slider-thumb,
+.player-seek:active::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+.player-seek:hover::-moz-range-thumb,
+.player-seek:focus-visible::-moz-range-thumb,
+.player-seek:active::-moz-range-thumb {
+  opacity: 1;
+}
+
+/* The medallion play/pause button. */
+.player-play {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  color: var(--pb-ink);
+  background: radial-gradient(
+    circle at 30% 25%,
+    var(--pb-gold-soft),
+    var(--pb-gold) 62%
+  );
+  box-shadow:
+    0 8px 20px var(--pb-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+
+.player-play:hover {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow:
+    0 12px 26px var(--pb-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.player-play:active {
+  transform: scale(0.96);
+}
+
+/* The recitation equalizer — four bars breathing while audio plays,
+   idling at a low stand when paused. */
+.player-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  width: 18px;
+  height: 16px;
+  flex: none;
+}
+
+.player-eq i {
+  flex: 1;
+  height: 100%;
+  background: var(--pb-gold);
+  border-radius: 1px;
+  transform: scaleY(0.28);
+  transform-origin: bottom;
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .player-eq[data-playing="true"] i {
+    animation: eqPulse 1s ease-in-out infinite;
+  }
+
+  .player-eq[data-playing="true"] i:nth-child(2) { animation-delay: 0.18s; }
+  .player-eq[data-playing="true"] i:nth-child(3) { animation-delay: 0.36s; }
+  .player-eq[data-playing="true"] i:nth-child(4) { animation-delay: 0.1s; }
+}
+
+@keyframes eqPulse {
+  0%, 100% { transform: scaleY(0.28); }
+  45%      { transform: scaleY(0.95); }
+}
+
+/* Rate / sleep chips on the bar. */
+.player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--pb-gold) 28%, var(--color-border));
+  border-radius: 9999px;
+  padding: 0.32rem 0.8rem;
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.player-chip:hover {
+  color: var(--pb-deep);
+  border-color: var(--pb-gold-soft);
+  background: color-mix(in srgb, var(--pb-gold) 8%, transparent);
+}
+
+/* Sleep select: no native arrow, chevron drawn at the inline end. */
+select.player-chip {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-inline-end: 1.7rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239b9994' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 0.55rem center;
+}
+
+.player-time {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.player-title {
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.18s ease;
+}
+
+.player-title:hover {
+  color: var(--pb-deep);
+}
+
+/* Bar entrance — rises from below when the first track loads. */
+@media (prefers-reduced-motion: no-preference) {
+  .player-bar-enter {
+    animation: playerBarUp 0.4s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+}
+
+@keyframes playerBarUp {
+  from { transform: translateY(110%); }
+  to   { transform: translateY(0); }
+}
+
+/* ============================================================
+   Search page — illuminated results exception (DESIGN.md)
+   The manuscript language extended to /search: verse hits are
+   whole-card links with rosette seals and a gilded hover; the
+   machine-transcript zone below the ornament divider stays on
+   neutral surfaces with the green accent (Rule 1: gold marks
+   authentic Quran only). Scoped to `.search-page`.
+   ============================================================ */
+.search-page {
+  --srch-gold:        #b8934a;
+  --srch-gold-soft:   #c9a45c;
+  --srch-gold-deep:   #8a6b2f;
+  --srch-gold-ink:    #ffffff;
+  --srch-card:        #fbf8f0;
+  --srch-card-border: #e8dcbe;
+  --srch-veil:        rgba(184, 147, 74, 0.06);
+  --srch-glow:        rgba(184, 147, 74, 0.22);
+  --srch-pattern:     rgba(184, 147, 74, 0.30);
+  --srch-quran-ink:   #3f3626;
+  /* Aliases so shared ornaments (OrnamentDivider's .sp-rule, .sp-badge--gold,
+     .ayah-seal) render inside this scope without forking their components.
+     var() resolves at use-time, so the dark --srch-* overrides below flow
+     through — no dark alias block needed. Caveat: any future .sp-* rule
+     added for /surah/[n] will also apply to these ornaments here. */
+  --sp-gold:        var(--srch-gold);
+  --sp-gold-soft:   var(--srch-gold-soft);
+  --sp-gold-deep:   var(--srch-gold-deep);
+  --sp-gold-ink:    var(--srch-gold-ink);
+  --sp-card-border: var(--srch-card-border);
+  --sp-veil:        var(--srch-veil);
+  --sp-pattern:     var(--srch-pattern);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .search-page {
+    --srch-gold:        #c9a45c;
+    --srch-gold-soft:   #d8b56e;
+    --srch-gold-deep:   #d8b56e;
+    --srch-gold-ink:    #16130d;
+    --srch-card:        #1c1a14;
+    --srch-card-border: #45402f;
+    --srch-veil:        rgba(201, 164, 92, 0.07);
+    --srch-glow:        rgba(201, 164, 92, 0.16);
+    --srch-pattern:     rgba(201, 164, 92, 0.20);
+    --srch-quran-ink:   #eadfc5;
+  }
+}
+
+:root[data-theme="dark"] .search-page {
+  --srch-gold:        #c9a45c;
+  --srch-gold-soft:   #d8b56e;
+  --srch-gold-deep:   #d8b56e;
+  --srch-gold-ink:    #16130d;
+  --srch-card:        #1c1a14;
+  --srch-card-border: #45402f;
+  --srch-veil:        rgba(201, 164, 92, 0.07);
+  --srch-glow:        rgba(201, 164, 92, 0.16);
+  --srch-pattern:     rgba(201, 164, 92, 0.20);
+  --srch-quran-ink:   #eadfc5;
+}
+
+/* Keyboard rings follow the page's gold inside the scope. */
+.search-page :focus-visible {
+  outline-color: var(--srch-gold);
+}
+
+/* A verse hit: the whole card is the link. Hover (or keyboard focus)
+   materialises the parchment card — same choreography as .surah-ayah. */
+.search-hit {
+  position: relative;
+  display: block;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 1.1rem;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+.search-hit:hover,
+.search-hit:focus-visible {
+  background: var(--srch-card);
+  border-color: var(--srch-card-border);
+  box-shadow: 0 12px 30px rgba(120, 96, 40, 0.1);
+  transform: translateY(-2px);
+}
+
+.search-hit-text {
+  color: var(--srch-quran-ink);
+}
+
+.search-hit-mark {
+  color: var(--srch-gold);
+  letter-spacing: -0.05em;
+}
+
+.search-hit-meta {
+  color: var(--color-ink-muted);
+  transition: color 0.2s ease;
+}
+
+.search-hit:hover .search-hit-meta,
+.search-hit:focus-visible .search-hit-meta {
+  color: var(--srch-gold-deep);
+}
+
+/* Forward is leftward in RTL, hence the negative X. */
+.search-hit-chevron {
+  flex: none;
+  color: var(--color-ink-faint);
+  transition:
+    transform 0.25s ease,
+    color 0.2s ease;
+}
+
+.search-hit:hover .search-hit-chevron,
+.search-hit:focus-visible .search-hit-chevron {
+  transform: translateX(-4px);
+  color: var(--srch-gold);
+}
+
+.search-hit:hover .ayah-seal {
+  transform: scale(1.06);
+}
+
+.search-hit:hover .ayah-seal .seal-dots {
+  transform: rotate(22.5deg);
+}
+
+.search-hit:hover .ayah-seal .seal-body {
+  opacity: 0.14;
+}
+
+/* Hairline under the results heading, drawn right→left on entrance.
+   The draw animation lives here only — never on OrnamentDivider's
+   .sp-rule (its --mirror variant already uses transform: scaleX(-1)). */
+.search-hero-rule {
+  height: 1px;
+  background: linear-gradient(to left, var(--srch-pattern), transparent);
+  transform-origin: right;
+}
+
+@keyframes searchIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes searchRuleDraw {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* `backwards` (not `both`) leaves the final state to the natural cascade,
+   so the hover lift transition keeps working afterwards. */
+@media (prefers-reduced-motion: no-preference) {
+  .search-hero {
+    animation: searchIn 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+
+  .search-hero-rule {
+    animation: searchRuleDraw 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) 0.15s backwards;
+  }
+
+  .search-hit {
+    animation: searchIn 0.5s ease-out backwards;
+  }
+
+  .search-section {
+    animation: searchIn 0.55s ease-out backwards;
+  }
+}
+
+/* ============================================================
+   Chunk result rows — shared by /search and /topics, so only
+   neutral/global tokens here (no gold: these are machine
+   transcripts, kept on the app's green accent).
+   ============================================================ */
+.chunk-row {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.chunk-row:hover {
+  background: var(--color-bg-subtle);
+  border-color: var(--color-border-subtle);
+}
+
+/* The "تشغيل من هنا" pill — same recipe as .surah-badge--green. */
+.chunk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  transition:
+    background-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.chunk-chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  transform: translateY(-1px);
+}
+
+.chunk-chip:disabled {
+  opacity: 0.6;
+  transform: none;
+}
+
+@keyframes chunkIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chunk-row {
+    animation: chunkIn 0.45s ease-out backwards;
+  }
 }
 
 /* Respect prefers-reduced-motion */

@@ -80,16 +80,9 @@ export default function OfflineButton({ segment }: OfflineButtonProps) {
       disabled={isBusy}
       aria-label={ariaLabel}
       aria-pressed={isSaved}
-      className="inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-opacity disabled:opacity-50"
-      style={{
-        borderColor: isSaved
-          ? "var(--color-accent)"
-          : "var(--color-border)",
-        color: isSaved ? "var(--color-accent)" : "var(--color-ink-muted)",
-        backgroundColor: isSaved
-          ? "var(--color-accent-bg)"
-          : "transparent",
-      }}
+      className={`listen-chip text-xs font-medium transition-opacity${
+        isSaved ? " listen-chip--active" : ""
+      }`}
     >
       {/* Icon */}
       {state === "saving" ? (

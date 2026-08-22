@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAudioStore } from "@/lib/audio-store";
-import type { PlaybackRate } from "@/lib/audio-store";
+import type { PlaybackRate, Track } from "@/lib/audio-store";
 import { formatMs } from "@/lib/format";
 
 const RATES: PlaybackRate[] = [0.75, 1, 1.25, 1.5];
@@ -12,10 +12,51 @@ const SLEEP_OPTIONS = [15, 30, 60] as const;
 /**
  * The transport bar. Mounted once in the root layout so navigation never
  * unmounts it — playback and its controls outlive every route change.
- * Renders nothing until a track is loaded.
+ * Renders nothing until a track is loaded; the shell remounts per track so
+ * the entrance animation and the height measurement re-run per segment.
  */
 export default function PlayerBar() {
   const current = useAudioStore((s) => s.current);
+  if (current === null) return null;
+  return <PlayerBarShell key={current.segmentId} track={current} />;
+}
+
+/**
+ * Writes the bar's exact pixel height into `--player-bar-height` on <html>
+ * so `.page-shell` (and every other fixed element positioned off that var)
+ * reserves precisely the room the wrapped bar occupies — short verses can no
+ * longer slide underneath it. Cleanup restores the stylesheet fallback.
+ */
+function useSyncBarHeight(ref: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const apply = () =>
+      root.style.setProperty("--player-bar-height", `${el.offsetHeight}px`);
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--player-bar-height");
+    };
+  }, [ref]);
+}
+
+/** Four gilded bars breathing with the audio, motion-gated in CSS. */
+function Equalizer({ playing }: { playing: boolean }) {
+  return (
+    <span aria-hidden className="player-eq hidden sm:flex" data-playing={playing}>
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
+function PlayerBarShell({ track }: { track: Track }) {
   const isPlaying = useAudioStore((s) => s.isPlaying);
   const positionMs = useAudioStore((s) => s.positionMs);
   const rate = useAudioStore((s) => s.rate);
@@ -26,6 +67,8 @@ export default function PlayerBar() {
   const setSleepTimer = useAudioStore((s) => s.setSleepTimer);
 
   const [sleepMinutes, setSleepMinutes] = useState<number | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+  useSyncBarHeight(barRef);
 
   // The store owns the truth: it clears its handle when the timer fires, so
   // the menu snaps back to "off" without an effect to keep the two in sync.
@@ -33,8 +76,6 @@ export default function PlayerBar() {
     sleepTimerHandle !== null && sleepMinutes !== null
       ? String(sleepMinutes)
       : "off";
-
-  if (current === null) return null;
 
   const cycleRate = () => {
     const next = RATES[(RATES.indexOf(rate) + 1) % RATES.length];
@@ -47,44 +88,83 @@ export default function PlayerBar() {
     setSleepTimer(minutes);
   };
 
+  const durationMs = Math.max(1, track.durationMs);
+  const clampedPosition = Math.min(positionMs, durationMs);
+  const seekPct = Math.min(100, (clampedPosition / durationMs) * 100);
+
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur-[8px]"
-      style={{ minHeight: "var(--player-bar-height)" }}
+      ref={barRef}
+      role="region"
+      aria-label="مشغّل الصوت"
+      className="player-bar player-bar-enter fixed inset-x-0 bottom-0 z-50"
     >
-      <div className="reading-column flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+      {/* The seek ribbon rides the bar's top edge: thin at rest, its gold
+          thumb surfaces on hover/focus. Still a native range input, so
+          keyboard seeking (arrows) keeps working. */}
+      <input
+        type="range"
+        min={0}
+        max={durationMs}
+        step={1000}
+        value={clampedPosition}
+        onChange={(event) => seekMs(Number(event.target.value))}
+        aria-label="موضع التشغيل"
+        className="player-seek"
+        style={{ "--seek-pct": `${seekPct}%` } as React.CSSProperties}
+      />
+
+      <div className="reading-column flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 sm:gap-x-4">
         <button
           type="button"
           onClick={toggle}
           aria-label={isPlaying ? "إيقاف مؤقت" : "تشغيل"}
-          className="shrink-0 rounded border border-[var(--color-border)] px-3 py-1.5 text-sm"
+          className="player-play"
         >
-          {isPlaying ? "❚❚" : "▶"}
+          {/* Inline SVG: the text glyphs "▶"/"❚❚" render inconsistently
+              across platforms (some fall back to emoji). */}
+          {isPlaying ? (
+            <svg
+              viewBox="0 0 12 12"
+              width="13"
+              height="13"
+              aria-hidden
+              className="fill-current"
+            >
+              <rect x="1.5" y="1" width="3.5" height="10" rx="0.5" />
+              <rect x="7" y="1" width="3.5" height="10" rx="0.5" />
+            </svg>
+          ) : (
+            <svg
+              viewBox="0 0 12 12"
+              width="13"
+              height="13"
+              aria-hidden
+              className="fill-current"
+            >
+              <path d="M2.5 1.2v9.6L10.5 6z" />
+            </svg>
+          )}
         </button>
 
-        <span
-          dir="ltr"
-          className="shrink-0 text-xs tabular-nums text-[var(--color-ink-muted)]"
-        >
-          {formatMs(positionMs)} / {formatMs(current.durationMs)}
+        <Equalizer playing={isPlaying} />
+
+        <span dir="ltr" className="player-time">
+          {formatMs(clampedPosition)} / {formatMs(track.durationMs)}
         </span>
 
-        <input
-          type="range"
-          min={0}
-          max={Math.max(1, current.durationMs)}
-          step={1000}
-          value={Math.min(positionMs, current.durationMs)}
-          onChange={(event) => seekMs(Number(event.target.value))}
-          aria-label="موضع التشغيل"
-          className="order-last w-full min-w-0 basis-full accent-[var(--color-accent)] sm:order-none sm:basis-auto sm:flex-1"
-        />
+        <Link
+          href={`/listen/${track.segmentId}`}
+          className="player-title order-last basis-full text-center sm:order-none sm:basis-auto sm:flex-1 sm:text-start"
+        >
+          {track.title}
+        </Link>
 
         <button
           type="button"
           onClick={cycleRate}
           aria-label="سرعة التشغيل"
-          className="shrink-0 rounded border border-[var(--color-border)] px-2 py-1.5 text-xs text-[var(--color-ink-muted)]"
+          className="player-chip"
         >
           <span dir="ltr">{rate}×</span>
         </button>
@@ -93,7 +173,7 @@ export default function PlayerBar() {
           value={selectedSleep}
           onChange={(event) => onSleepChange(event.target.value)}
           aria-label="مؤقّت النوم"
-          className="shrink-0 rounded border border-[var(--color-border)] bg-transparent px-2 py-1.5 text-xs text-[var(--color-ink-muted)]"
+          className="player-chip"
         >
           <option value="off">مؤقّت النوم</option>
           {SLEEP_OPTIONS.map((minutes) => (
@@ -102,13 +182,6 @@ export default function PlayerBar() {
             </option>
           ))}
         </select>
-
-        <Link
-          href={`/listen/${current.segmentId}`}
-          className="min-w-0 flex-1 truncate text-xs text-[var(--color-ink-muted)] sm:max-w-[14rem]"
-        >
-          {current.title}
-        </Link>
       </div>
     </div>
   );

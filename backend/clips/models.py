@@ -1,9 +1,9 @@
-"""Shareable video clips rendered from a slice of a segment.
+"""Shareable clips rendered from a slice of a segment — video cards or audio.
 
 A clip row is a render *job*: the API only ever enqueues one, and the renderer
 (Phase 8) fills in ``storage_key`` or ``error``. The unique constraint over
-(segment, range, preset) makes the job its own cache — asking twice for the
-same clip hands back the first one instead of burning another render.
+(segment, range, preset, output) makes the job its own cache — asking twice for
+the same clip hands back the first one instead of burning another render.
 
 Offsets are integer milliseconds (``CLAUDE.md`` rule 5).
 """
@@ -14,16 +14,23 @@ import uuid
 
 from django.db import models
 
-MIN_SPAN_MS = 15_000
-MAX_SPAN_MS = 60_000
-"""Clip length bounds from API_CONTRACT.md: long enough to carry a thought,
-short enough for a social timeline."""
+MIN_SPAN_MS = 1_000
+"""Shortest clip the API accepts: one full second, so a render is never a
+degenerate empty file. There is no upper bound — a clip may run to the end of
+its segment (``API_CONTRACT.md`` amendment 9)."""
 
 
 class ClipPreset(models.TextChoices):
     CLASSIC = "classic", "Classic"
     NIGHT = "night", "Night"
     LIGHT = "light", "Light"
+
+
+class ClipOutput(models.TextChoices):
+    """What a clip job produces: a video card or a plain audio file."""
+
+    VIDEO = "video", "Video"
+    AUDIO = "audio", "Audio"
 
 
 class ClipStatus(models.TextChoices):
@@ -43,6 +50,9 @@ class Clip(models.Model):
     start_ms = models.PositiveBigIntegerField()
     end_ms = models.PositiveBigIntegerField()
     preset = models.CharField(max_length=16, choices=ClipPreset.choices)
+    output = models.CharField(
+        max_length=8, choices=ClipOutput.choices, default=ClipOutput.VIDEO
+    )
     status = models.CharField(
         max_length=16, choices=ClipStatus.choices, default=ClipStatus.QUEUED
     )
@@ -54,7 +64,7 @@ class Clip(models.Model):
         ordering = ["-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["segment", "start_ms", "end_ms", "preset"],
+                fields=["segment", "start_ms", "end_ms", "preset", "output"],
                 name="clip_unique_render",
             ),
         ]

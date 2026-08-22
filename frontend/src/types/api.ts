@@ -101,11 +101,33 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description ``GET /api/search/?q=&mode=&kind=&surah=&page=`` (API_CONTRACT.md).
+         * @description ``GET /api/search/?q=&kind=&surah=&page=`` (API_CONTRACT.md).
          *
          *     Never cached: results move with every pipeline run.
          */
         get: operations["search_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/suggest/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ``GET /api/search/suggest/?q=`` — autocomplete suggestions.
+         *
+         *     Returns a plain list of strings (matched chunk text snippets).
+         *     Never cached; results move with every pipeline run.
+         */
+        get: operations["search_suggest"];
         put?: never;
         post?: never;
         delete?: never;
@@ -150,39 +172,15 @@ export interface paths {
          *
          *     The client already has the word array from ``/transcript/``; this says
          *     which passage each word belongs to, which is what a correction has to name
-         *     when it is submitted. Content-addressed like the transcript itself: the
-         *     spans only move when an approved correction bumps ``Transcript.version``.
+         *     when it is submitted. Short-lived cache, NOT immutable: the URL carries no
+         *     transcript version, and an approved correction can renumber word indices —
+         *     a year-old chunk map would target the wrong words.
          *
          *     Assembled from two ``values_list`` queries rather than through the
          *     serializer, for the reason ``SegmentTranscriptView`` gives — the payload is
          *     mechanical and a transcript can carry thousands of words.
          */
         get: operations["segment_chunks_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/segments/{id}/related/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description ``GET /api/segments/{id}/related/`` — nearest passages elsewhere.
-         *
-         *     The segment is reduced to the centroid of its chunk embeddings, and the
-         *     corpus is searched by cosine distance to that centroid with the segment's
-         *     own chunks excluded. Cosine distance ignores magnitude, so the mean needs
-         *     no renormalization. A segment that has not been embedded yet returns ``[]``
-         *     rather than an error — embedding lags ingestion.
-         */
-        get: operations["segment_related_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -335,8 +333,8 @@ export interface components {
             readonly title: string;
         };
         /**
-         * @description The search-result shape, reused wherever chunks are surfaced (topics,
-         *     related passages) so one renderer on the frontend handles all of them.
+         * @description The search-result shape, reused wherever chunks are surfaced (topics)
+         *     so one renderer on the frontend handles all of them.
          *     Mirrors :class:`search.services.SearchResult`.
          */
         ChunkResult: {
@@ -379,17 +377,21 @@ export interface components {
             /** Format: int64 */
             end_ms: number;
             preset: components["schemas"]["PresetEnum"];
+            output?: components["schemas"]["ClipOutputEnum"];
         };
         /**
-         * @description ``GET /api/clips/{id}/``. ``video_url`` appears only once the render
-         *     finished — a queued or failed job has nothing to hand out.
+         * @description ``GET /api/clips/{id}/``. Exactly one of ``video_url``/``audio_url``
+         * appears once the render finishes; a queued or failed job has neither.
          */
         ClipDetail: {
             /** Format: uuid */
             readonly id: string;
             status?: components["schemas"]["ClipStatusEnum"];
+            output?: components["schemas"]["ClipOutputEnum"];
             /** Format: uri */
             readonly video_url: string | null;
+            /** Format: uri */
+            readonly audio_url: string | null;
         };
         /** @description The body of both clip POST outcomes: created, or already queued. */
         ClipStatus: {
@@ -405,6 +407,12 @@ export interface components {
          * @enum {string}
          */
         ClipStatusEnum: "queued" | "rendering" | "done" | "failed";
+        /**
+         * @description * `video` - Video
+         *     * `audio` - Audio
+         * @enum {string}
+         */
+        ClipOutputEnum: "video" | "audio";
         /**
          * @description ``POST /api/corrections/``. Word offsets index ``TranscriptWord.idx``;
          *     a one-word fix has ``word_start == word_end``.
@@ -454,13 +462,6 @@ export interface components {
          */
         KindEnum: "recitation" | "khawatir";
         /**
-         * @description * `lexical` - lexical
-         *     * `semantic` - semantic
-         *     * `hybrid` - hybrid
-         * @enum {string}
-         */
-        ModeEnum: "lexical" | "semantic" | "hybrid";
-        /**
          * @description * `classic` - Classic
          *     * `night` - Night
          *     * `light` - Light
@@ -476,8 +477,8 @@ export interface components {
         /** @description ``GET /api/search/`` — mirrors :class:`search.services.SearchResponse`. */
         SearchResponse: {
             query: string;
-            mode: components["schemas"]["ModeEnum"];
             ayah_matches: components["schemas"]["AyahMatch"][];
+            verse_matches: components["schemas"]["VerseMatch"][];
             results: components["schemas"]["ChunkResult"][];
             page: number;
             total: number;
@@ -584,6 +585,15 @@ export interface components {
             e: number;
             /** Format: double */
             c: number | null;
+        };
+        /** @description A mushaf verse found by full-text search over the canonical text. */
+        VerseMatch: {
+            surah: number;
+            number: number;
+            text_uthmani: string;
+            surah_name_ar: string;
+            juz: number;
+            page: number;
         };
     };
     responses: never;
@@ -699,7 +709,6 @@ export interface operations {
         parameters: {
             query: {
                 kind?: string;
-                mode?: "hybrid" | "lexical" | "semantic";
                 page?: number;
                 q: string;
                 surah?: number;
@@ -724,6 +733,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    search_suggest: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
         };
@@ -766,27 +796,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChunkSpan"][];
-                };
-            };
-        };
-    };
-    segment_related_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChunkResult"][];
                 };
             };
         };

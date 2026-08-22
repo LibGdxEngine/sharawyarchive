@@ -1,10 +1,10 @@
 """Pluggable ASR and forced-alignment engines.
 
-Selected by the Django setting ``ASR_BACKEND`` (``'stub'`` | ``'faster-whisper'``),
-the same way ``corpus.embeddings.get_embedder`` reads ``EMBEDDING_BACKEND``. The
-stub engines are deterministic and dependency-free so the whole pipeline runs in
-CI and on a laptop without torch; the real engines live here too but import
-their heavy dependencies lazily, inside the methods.
+Selected by the Django setting ``ASR_BACKEND`` (``'stub'`` | ``'cohere'`` |
+``'faster-whisper'``). The stub engines are deterministic and dependency-free
+so the whole pipeline runs in CI and on a laptop without torch; the real
+engines live here too but import their heavy dependencies lazily, inside the
+methods.
 
 All timings are integer milliseconds (project rule 5).
 """
@@ -13,13 +13,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple, Protocol
+from typing import Any, NamedTuple, Protocol
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 WORD_GAP_MS = 100
 """Silence the stub leaves between two consecutive words."""
@@ -440,10 +443,36 @@ class CTCAligner:
 
     Does not need the ASR word timings (``needs_words = False``) — it re-derives
     them from the acoustic model, which is the whole point of the stage.
+
+    The library windows the *emissions* pass internally, but its alignment step
+    is one Viterbi trellis of T frames × (2·targets+1) over the whole file —
+    tens of GB for an 80-minute episode, which is what OOM-killed the long
+    segments. Files past :attr:`MAX_TRELLIS_CELLS` are therefore aligned in
+    sequential windows, each window starting at the end of the last committed
+    word so pace drift never accumulates. The candidate text deliberately
+    underfills its window (the ``<star>`` token the library interleaves before
+    every word absorbs leftover audio), and words landing near the window edge
+    are re-aligned in the next window instead of being committed squeezed.
     """
 
     name = "ctc-forced-aligner"
     needs_words = False
+
+    MAX_TRELLIS_CELLS = 200_000_000
+    """Viterbi backtrack cells a single alignment may allocate. The compiled
+    aligner's per-cell cost is opaque, so this assumes a few bytes per cell and
+    stays well inside a worker's memory."""
+
+    TARGET_WINDOW_MS = 480_000
+    """Preferred audio span per window when a file has to be split."""
+
+    WINDOW_FILL = 0.75
+    """Fraction of a window the candidate text is sized to fill. Underfilling
+    is safe (stars absorb the rest); overfilling squeezes tail words."""
+
+    COMMIT_MARGIN = 0.9
+    """Words ending past this fraction of a window may be edge-squeezed, so
+    they are deferred to the next window."""
 
     def __init__(self) -> None:
         self.model_name = os.environ.get(
@@ -462,12 +491,9 @@ class CTCAligner:
     ) -> list[AlignedWord]:
         try:
             from ctc_forced_aligner import (
+                Alignment,
                 generate_emissions,
-                get_alignments,
-                get_spans,
-                load_alignment_model,
                 load_audio,
-                postprocess_results,
                 preprocess_text,
             )
         except ImportError as exc:  # pragma: no cover - depends on the image
@@ -476,22 +502,134 @@ class CTCAligner:
                 "pip install -r pipeline/requirements.txt"
             ) from exc
 
-        model, tokenizer = load_alignment_model(self.device, self.model_name)
-        waveform = load_audio(audio_path, model.dtype, model.device)
-        emissions, stride = generate_emissions(model, waveform)
+        model_path = os.path.join(
+            os.path.expanduser("~"), ".cache", "ctc_forced_aligner", "model.onnx"
+        )
+        alignment = Alignment(model_path)
+        waveform = load_audio(audio_path)
+        emissions, stride = generate_emissions(alignment.model, waveform)
+        del waveform
+
+        word_list = text.split()
+        if not word_list:
+            return []
+
         tokens_starred, text_starred = preprocess_text(text, romanize=True, language="ara")
+        # The library interleaves ``<star>`` before every word, so the odd
+        # entries are the words' romanized tokens; +1 counts the star itself.
+        per_word_targets = [
+            len(word_tokens.split(" ")) + 1 for word_tokens in tokens_starred[1::2]
+        ]
+
+        if emissions.shape[0] * (2 * sum(per_word_targets) + 1) <= self.MAX_TRELLIS_CELLS:
+            results = self._align_span(
+                emissions, stride, tokens_starred, text_starred, alignment.alignment_tokenizer
+            )
+            aligned: list[AlignedWord] = []
+            for result in results:
+                aligned.append(
+                    self._word(result, 0, aligned[-1].end_ms if aligned else 0)
+                )
+            return aligned
+        return self._align_long(
+            emissions, stride, word_list, per_word_targets, alignment.alignment_tokenizer
+        )
+
+    def _align_long(
+        self,
+        emissions: Any,
+        stride: int,
+        word_list: list[str],
+        per_word_targets: list[int],
+        tokenizer: Any,
+    ) -> list[AlignedWord]:
+        import numpy
+        from ctc_forced_aligner import preprocess_text
+
+        total_frames = int(emissions.shape[0])
+        target_window_frames = max(1, int(self.TARGET_WINDOW_MS / stride))
+        aligned: list[AlignedWord] = []
+        frame_cursor = 0
+        word_cursor = 0
+        while word_cursor < len(word_list):
+            remaining_words = len(word_list) - word_cursor
+            remaining_frames = max(total_frames - frame_cursor, 1)
+            remaining_targets = sum(per_word_targets[word_cursor:])
+
+            is_last = (
+                remaining_frames * (2 * remaining_targets + 1) <= self.MAX_TRELLIS_CELLS
+            )
+            if is_last:
+                take = remaining_words
+                window_frames = remaining_frames
+            else:
+                window_frames = min(remaining_frames, target_window_frames)
+                pace = remaining_words / remaining_frames
+                take = min(
+                    remaining_words, max(1, int(pace * window_frames * self.WINDOW_FILL))
+                )
+                chunk_targets = sum(per_word_targets[word_cursor : word_cursor + take])
+                budget_frames = self.MAX_TRELLIS_CELLS // (2 * chunk_targets + 1)
+                if budget_frames < window_frames:
+                    take = max(1, int(take * budget_frames / window_frames))
+                    window_frames = max(budget_frames, 1)
+
+            chunk = word_list[word_cursor : word_cursor + take]
+            tokens_starred, text_starred = preprocess_text(
+                " ".join(chunk), romanize=True, language="ara"
+            )
+            window = numpy.ascontiguousarray(
+                emissions[frame_cursor : frame_cursor + window_frames]
+            )
+            results = self._align_span(window, stride, tokens_starred, text_starred, tokenizer)
+
+            if not is_last:
+                cutoff_seconds = window_frames * stride * self.COMMIT_MARGIN / 1000
+                kept = [result for result in results if result["end"] <= cutoff_seconds]
+                results = kept or results[:1]
+
+            offset_ms = frame_cursor * stride
+            for result in results:
+                aligned.append(
+                    self._word(result, offset_ms, aligned[-1].end_ms if aligned else 0)
+                )
+            word_cursor += len(results)
+            frame_cursor = max(aligned[-1].end_ms // stride, frame_cursor + 1)
+            logger.info(
+                "windowed align: %d/%d words, %d/%d frames",
+                word_cursor,
+                len(word_list),
+                min(frame_cursor, total_frames),
+                total_frames,
+            )
+        return aligned
+
+    @staticmethod
+    def _align_span(
+        emissions: Any,
+        stride: int,
+        tokens_starred: list[str],
+        text_starred: list[str],
+        tokenizer: Any,
+    ) -> list[dict[str, Any]]:
+        from ctc_forced_aligner import get_alignments, get_spans, postprocess_results
+
         segments, scores, blank_token = get_alignments(emissions, tokens_starred, tokenizer)
         spans = get_spans(tokens_starred, segments, blank_token)
-        results = postprocess_results(text_starred, spans, stride, scores)
-        return [
-            AlignedWord(
-                text=result["text"],
-                start_ms=int(round(result["start"] * 1000)),
-                end_ms=int(round(result["end"] * 1000)),
-                confidence=result.get("score"),
-            )
-            for result in results
-        ]
+        return postprocess_results(text_starred, spans, stride, scores)
+
+    @staticmethod
+    def _word(result: dict[str, Any], offset_ms: int, floor_ms: int) -> AlignedWord:
+        # Clamp like the library's own merge step, but across window seams too:
+        # starts never precede the previous word's end, spans never collapse.
+        start_ms = max(offset_ms + int(round(result["start"] * 1000)), floor_ms)
+        end_ms = max(offset_ms + int(round(result["end"] * 1000)), start_ms + 1)
+        return AlignedWord(
+            text=result["text"],
+            start_ms=start_ms,
+            end_ms=end_ms,
+            confidence=result.get("score"),
+        )
 
 
 def get_asr_engine() -> ASREngine:

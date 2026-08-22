@@ -87,16 +87,20 @@ export default function ChunkResultList({
       <p className="pt-2 text-xs leading-relaxed text-[var(--color-ink-muted)]">
         {MACHINE_TRANSCRIPT_NOTE}
       </p>
-      <ul className="divide-y divide-[var(--color-border-subtle)]">
-        {results.map((result) => (
-          <li key={result.chunk_id} className="py-4">
+      <ul className="space-y-1">
+        {results.map((result, i) => (
+          <li
+            key={result.chunk_id}
+            className="chunk-row"
+            style={{ animationDelay: `${Math.min(i, 10) * 45}ms` }}
+          >
             <p className="text-xs text-[var(--color-ink-muted)]">
               {citationLine(result)}
             </p>
 
             <Link
               href={`/listen/${result.segment_id}?t=${result.start_ms}`}
-              className="mt-1 block text-base leading-[1.8]"
+              className="mt-1 block text-base leading-[1.8] underline-offset-4 decoration-[var(--color-border)] hover:underline"
             >
               {result.text}
             </Link>
@@ -106,7 +110,7 @@ export default function ChunkResultList({
                 type="button"
                 onClick={() => playHere(result)}
                 disabled={pendingChunkId === result.chunk_id}
-                className="rounded border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-ink-muted)] disabled:opacity-60"
+                className="chunk-chip"
               >
                 {pendingChunkId === result.chunk_id
                   ? "جارٍ التحميل…"

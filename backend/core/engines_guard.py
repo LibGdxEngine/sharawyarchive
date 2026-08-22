@@ -1,7 +1,7 @@
-"""Refuse to boot production on the stub ASR/embedding engines.
+"""Refuse to boot production on the stub ASR engine.
 
-``core.settings.base`` defaults ``ASR_BACKEND`` and ``EMBEDDING_BACKEND`` to
-``stub`` so that tests and a bare dev checkout need no models. The stub ASR
+``core.settings.base`` defaults ``ASR_BACKEND`` to ``stub`` so that tests and
+a bare dev checkout need no models. The stub ASR
 does not transcribe anything — it emits deterministic filler — so a production
 deploy that inherits the default would fill the archive with invented sentences
 presented as the Sheikh's words, which is precisely what ``CLAUDE.md`` rule 1
@@ -23,7 +23,7 @@ __all__ = ["ALLOW_VAR", "ENGINE_VARS", "STUB", "check_engines"]
 STUB = "stub"
 """The value that means "no real model behind this backend"."""
 
-ENGINE_VARS = ("ASR_BACKEND", "EMBEDDING_BACKEND")
+ENGINE_VARS = ("ASR_BACKEND",)
 """Read by ``core.settings.base``; unset means ``stub``."""
 
 ALLOW_VAR = "ALLOW_STUB_ENGINES"
@@ -47,7 +47,7 @@ def check_engines(env: Mapping[str, str]) -> None:
         f"{' and '.join(stubbed)} would run on the {STUB!r} engine in production. "
         "The stub engines fabricate output, and indexing invented speech as the "
         "Sheikh's words is the one thing this archive must never do. Set "
-        "ASR_BACKEND=cohere (or faster-whisper) and EMBEDDING_BACKEND=e5 (or another real "
-        f"backend), or set {ALLOW_VAR}=true if this deployment really is a "
+        "ASR_BACKEND=cohere (or faster-whisper), "
+        f"or set {ALLOW_VAR}=true if this deployment really is a "
         "model-free staging box."
     )

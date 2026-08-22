@@ -40,7 +40,7 @@ class Summary:
         return f"processed {self.processed}, skipped {self.skipped}, failed {self.failed}"
 
 
-STAGE_ORDER = ("transcode", "transcribe", "align", "chunk", "embed", "index")
+STAGE_ORDER = ("transcode", "transcribe", "align", "chunk", "index")
 
 
 def process_segment(
@@ -59,7 +59,6 @@ def process_segment(
         ("transcribe", lambda: stages.do_transcribe(segment_id, local_path)),
         ("align", lambda: stages.do_align(segment_id, local_path)),
         ("chunk", lambda: stages.do_chunk(segment_id)),
-        ("embed", lambda: stages.do_embed(segment_id)),
         ("index", lambda: stages.do_index_segment(segment_id)),
     )[: STAGE_ORDER.index(until) + 1]
     notes: list[str] = []

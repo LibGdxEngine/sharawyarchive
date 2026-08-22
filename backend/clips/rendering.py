@@ -1,9 +1,14 @@
-"""Turn a queued :class:`~clips.models.Clip` into an mp4 in object storage.
+"""Turn a queued :class:`~clips.models.Clip` into a file in object storage.
 
-One ffmpeg pass does the whole card: the segment's audio trimmed with
-``-ss/-to``, a flat 1080x1920 colour field from ``lavfi``, and the karaoke ASS
-file from :mod:`clips.subtitles` burned on with libass. H.264 + AAC, because the
-clip is going to be dropped into a social timeline.
+Two outputs, two passes:
+
+* **video** — one ffmpeg pass draws the card: the segment's audio trimmed with
+  ``-ss/-to``, an animated waveform (``showwaves``, driven by the audio itself)
+  composited over the preset's colour field, and the karaoke ASS file from
+  :mod:`clips.subtitles` burned on with libass. H.264 + AAC.
+* **audio** — one ffmpeg pass trims and re-encodes to AAC in an ``m4a``
+  container, embedding the clipped transcript as ID3/lyrics metadata so the
+  machine transcription travels with the file.
 
 :func:`render_clip` is the entire contract of this module and it is deliberately
 blunt about failure: it never raises. A render that dies leaves the row
@@ -29,7 +34,7 @@ from django.conf import settings
 from corpus import storage
 from corpus.models import TranscriptWord
 
-from .models import Clip, ClipStatus
+from .models import Clip, ClipOutput, ClipStatus
 from .subtitles import PRESETS, build_ass
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,9 @@ FRAME_RATE = 30
 FRAME_SIZE = '1080x1920'
 VIDEO_CRF = '20'
 AUDIO_BITRATE = '128k'
+AUDIO_CONTAINER = 'm4a'
+VIDEO_CONTENT_TYPE = 'video/mp4'
+AUDIO_CONTENT_TYPE = 'audio/mp4'
 
 MACHINE_TRANSCRIPT_MARK = 'نص آلي'
 """A clip card burns the machine transcript into a video that then travels
@@ -103,10 +111,28 @@ def clip_words(clip: Clip) -> list[tuple[str, int, int]]:
     return [(text, int(start), int(end)) for text, start, end in rows]
 
 
+def clip_transcript_text(clip: Clip) -> str:
+    """The clipped transcript as one plain line of prose, for audio metadata.
+
+    Rule 1 travels with the file: the machine-transcript mark is prepended, so
+    an audio export that lands in somebody's library still names its words as
+    ASR output.
+    """
+    words = ' '.join(text for text, _start, _end in clip_words(clip)).strip()
+    return f'{MACHINE_TRANSCRIPT_MARK}: {words}' if words else MACHINE_TRANSCRIPT_MARK
+
+
+def _wave_colour(preset: str) -> str:
+    """The waveform's line colour — the preset's spoken-word highlight, so the
+    animated wave and the karaoke sweep share one palette."""
+    return f'0x{PRESETS[preset].spoken.lstrip("#")}'
+
+
 def ffmpeg_command(
     *, audio_path: Path, ass_path: Path, output_path: Path, preset: str, clip: Clip
 ) -> list[str]:
-    """The single pass: trim, paint, burn, encode."""
+    """The video pass: trim, draw the wave over the preset colour, burn, encode."""
+    background = PRESETS[preset].background.lstrip('#')
     return [
         FFMPEG,
         '-nostdin',
@@ -124,9 +150,18 @@ def ffmpeg_command(
         'lavfi',
         '-i',
         # 0x form, not '#': lavfi parses this string as a filtergraph.
-        f'color=c=0x{PRESETS[preset].background.lstrip("#")}:s={FRAME_SIZE}:r={FRAME_RATE}',
-        '-vf',
-        f'ass={_escape_filter_path(str(ass_path))}',
+        f'color=c=0x{background}:s={FRAME_SIZE}:r={FRAME_RATE}',
+        '-filter_complex',
+        # showwaves paints the wave on black; `blend=screen` turns that black
+        # into the preset colour, and `ass` burns the karaoke card on top.
+        f'[0:a]showwaves=s={FRAME_SIZE}:mode=cline:rate={FRAME_RATE}:'
+        f'colors={_wave_colour(preset)}:scale=sqrt,format=yuv420p[wave];'
+        f'[1:v][wave]blend=all_mode=screen:shortest=1[v0];'
+        f'[v0]ass={_escape_filter_path(str(ass_path))}[v]',
+        '-map',
+        '[v]',
+        '-map',
+        '0:a',
         '-c:v',
         'libx264',
         '-preset',
@@ -147,37 +182,80 @@ def ffmpeg_command(
     ]
 
 
+def ffmpeg_audio_command(
+    *, audio_path: Path, output_path: Path, clip: Clip
+) -> list[str]:
+    """The audio pass: trim, re-encode to AAC, and embed the transcription."""
+    return [
+        FFMPEG,
+        '-nostdin',
+        '-y',
+        '-v',
+        'error',
+        '-ss',
+        f'{clip.start_ms / 1000:.3f}',
+        '-to',
+        f'{clip.end_ms / 1000:.3f}',
+        '-i',
+        str(audio_path),
+        '-metadata',
+        f'title={attribution_text()}',
+        '-metadata',
+        f'lyrics={clip_transcript_text(clip)}',
+        '-c:a',
+        'aac',
+        '-b:a',
+        AUDIO_BITRATE,
+        '-movflags',
+        '+faststart',
+        str(output_path),
+    ]
+
+
 def _render(clip: Clip, key: str) -> None:
     with tempfile.TemporaryDirectory(prefix='shaarawy-clip-') as tmp:
         folder = Path(tmp)
         audio_path = folder / 'source-audio'
-        subtitle_path = folder / 'karaoke.ass'
-        output_path = folder / 'clip.mp4'
+        output_path = (
+            folder / 'clip.mp4'
+            if clip.output == ClipOutput.VIDEO
+            else folder / 'clip.m4a'
+        )
 
         storage.get_s3_client().download_file(
             settings.AUDIO_S3_BUCKET, clip.segment.audio.storage_key, str(audio_path)
         )
-        subtitle_path.write_text(
-            build_ass(
-                clip_words(clip),
-                clip_start_ms=clip.start_ms,
-                clip_end_ms=clip.end_ms,
-                preset=clip.preset,
-                attribution=attribution_text(),
-            ),
-            encoding='utf-8',
-        )
-        _run(
-            ffmpeg_command(
+
+        if clip.output == ClipOutput.VIDEO:
+            subtitle_path = folder / 'karaoke.ass'
+            subtitle_path.write_text(
+                build_ass(
+                    clip_words(clip),
+                    clip_start_ms=clip.start_ms,
+                    clip_end_ms=clip.end_ms,
+                    preset=clip.preset,
+                    attribution=attribution_text(),
+                ),
+                encoding='utf-8',
+            )
+            command = ffmpeg_command(
                 audio_path=audio_path,
                 ass_path=subtitle_path,
                 output_path=output_path,
                 preset=clip.preset,
                 clip=clip,
-            ),
-            what=f'clip {clip.pk} render',
-        )
-        storage.upload_file(key, str(output_path), 'video/mp4')
+            )
+            what = f'clip {clip.pk} video render'
+            content_type = VIDEO_CONTENT_TYPE
+        else:
+            command = ffmpeg_audio_command(
+                audio_path=audio_path, output_path=output_path, clip=clip
+            )
+            what = f'clip {clip.pk} audio render'
+            content_type = AUDIO_CONTENT_TYPE
+
+        _run(command, what=what)
+        storage.upload_file(key, str(output_path), content_type)
 
 
 def render_clip(clip: Clip) -> None:
@@ -187,7 +265,7 @@ def render_clip(clip: Clip) -> None:
     background job, and the tests drive this function directly.
     """
     key = clip.storage_key or storage.clip_key(
-        clip.segment_id, clip.start_ms, clip.end_ms, clip.preset
+        clip.segment_id, clip.start_ms, clip.end_ms, clip.preset, clip.output
     )
     if clip.status == ClipStatus.DONE and storage.object_exists(key):
         logger.info('clip %s already rendered at %s', clip.pk, key)

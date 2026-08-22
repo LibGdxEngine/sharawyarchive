@@ -38,7 +38,7 @@ export default function ShareButton({ segmentId }: ShareButtonProps) {
     <button
       type="button"
       onClick={share}
-      className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-ink-muted)]"
+      className={`listen-chip${copied ? " listen-chip--active" : ""}`}
     >
       {copied ? "نُسخ الرابط" : "مشاركة الموضع"}
     </button>

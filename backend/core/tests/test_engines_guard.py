@@ -1,4 +1,4 @@
-"""The production guard against the stub ASR/embedding engines.
+"""The production guard against the stub ASR engine.
 
 Tested against a plain mapping rather than by importing production settings:
 the point is the decision, and a real ``core.settings.prod`` import would drag
@@ -12,31 +12,29 @@ from django.core.exceptions import ImproperlyConfigured
 
 from core.engines_guard import ALLOW_VAR, check_engines
 
-REAL = {'ASR_BACKEND': 'faster-whisper', 'EMBEDDING_BACKEND': 'e5'}
+REAL = {'ASR_BACKEND': 'faster-whisper'}
 
 
 def test_real_backends_pass() -> None:
     check_engines(REAL)  # must not raise
 
 
-def test_an_environment_that_names_neither_backend_is_refused() -> None:
+def test_an_environment_that_names_no_backend_is_refused() -> None:
     """Unset is the dangerous case, not a stray ``=stub``: base.py defaults
-    both to the stub, so an operator who follows DEPLOY.md and exports nothing
+    to the stub, so an operator who follows DEPLOY.md and exports nothing
     would boot a production process that fabricates transcripts."""
     with pytest.raises(ImproperlyConfigured) as caught:
         check_engines({})
 
     assert 'ASR_BACKEND' in str(caught.value)
-    assert 'EMBEDDING_BACKEND' in str(caught.value)
 
 
-@pytest.mark.parametrize('stubbed', ['ASR_BACKEND', 'EMBEDDING_BACKEND'])
-def test_one_stub_backend_is_enough_to_refuse(stubbed: str) -> None:
+def test_a_stub_backend_is_refused() -> None:
     with pytest.raises(ImproperlyConfigured) as caught:
-        check_engines({**REAL, stubbed: 'stub'})
+        check_engines({'ASR_BACKEND': 'stub'})
 
     message = str(caught.value)
-    assert stubbed in message
+    assert 'ASR_BACKEND' in message
     assert ALLOW_VAR in message  # the message says how to override it
 
 

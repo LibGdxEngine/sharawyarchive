@@ -1,5 +1,4 @@
-"""Corpus endpoints: segments, transcripts, related passages, topics and the
-correction inbox."""
+"""Corpus endpoints: segments, transcripts, topics and the correction inbox."""
 
 from __future__ import annotations
 
@@ -18,9 +17,8 @@ from api.cache import PRIVATE_SHORT, PUBLIC_SHORT, CacheControlMixin, ImmutableC
 from api.ip import client_ip
 
 from .corrections import word_range_in_span
-from .models import Chunk, ChunkTopic, Segment, Topic
+from .models import ChunkTopic, Segment, Topic
 from .serializers import (
-    ChunkResultSerializer,
     ChunkSpanSerializer,
     CorrectionCreatedSerializer,
     CorrectionCreateSerializer,
@@ -29,9 +27,6 @@ from .serializers import (
     TopicListSerializer,
     TranscriptSerializer,
 )
-
-RELATED_LIMIT = 10
-"""How many neighbouring passages ``/related/`` returns."""
 
 TOPIC_CHUNK_LIMIT = 100
 """Cap on the passages ``/api/topics/{slug}/`` serves in one response.
@@ -73,9 +68,16 @@ class SegmentTranscriptView(ImmutableCacheMixin, APIView):
         transcript = getattr(segment, 'transcript', None)
         if transcript is None:
             raise NotFound(f'segment {pk} has no transcript yet')
-        rows = transcript.words.order_by('idx').values_list(
-            'idx', 'text', 'start_ms', 'end_ms', 'confidence'
+        rows = list(
+            transcript.words.order_by('idx').values_list(
+                'idx', 'text', 'start_ms', 'end_ms', 'confidence'
+            )
         )
+        # A transcript without aligned words (align stage pending or killed)
+        # must not produce a cacheable-forever empty word array: 404 keeps the
+        # client on its "not transcribed yet" path until alignment lands.
+        if not rows:
+            raise NotFound(f'segment {pk} has no aligned words yet')
         return Response(
             {
                 'version': transcript.version,
@@ -135,53 +137,6 @@ class SegmentChunksView(CacheControlMixin, APIView):
                 }
             )
         return Response(rows)
-
-
-class SegmentRelatedView(CacheControlMixin, APIView):
-    """``GET /api/segments/{id}/related/`` — nearest passages elsewhere.
-
-    Short-lived public cache, never immutable: every newly embedded segment
-    changes this corpus-wide result.
-
-    The segment is reduced to the centroid of its chunk embeddings, and the
-    corpus is searched by cosine distance to that centroid with the segment's
-    own chunks excluded. Cosine distance ignores magnitude, so the mean needs
-    no renormalization. A segment that has not been embedded yet returns ``[]``
-    rather than an error — embedding lags ingestion.
-    """
-
-    cache_control = PUBLIC_SHORT
-
-    @extend_schema(
-        operation_id='segment_related_list', responses=ChunkResultSerializer(many=True)
-    )
-    def get(self, request: Request, pk: int) -> Response:
-        get_object_or_404(Segment.objects.only('pk'), pk=pk)
-        vectors = list(
-            Chunk.objects.filter(
-                transcript__segment_id=pk, embedding__isnull=False
-            ).values_list('embedding', flat=True)
-        )
-        if not vectors:
-            return Response([])
-
-        import numpy as np
-
-        from search.services import nearest_chunks
-
-        centroid = np.mean(np.asarray(vectors, dtype=float), axis=0).tolist()
-        # Through search.services, not a queryset of its own: the "not this
-        # segment" filter is applied after the approximate index scan, so this
-        # is exactly the query that silently underfetches without the scan
-        # depth that helper sets.
-        neighbours = nearest_chunks(
-            Chunk.objects.filter(embedding__isnull=False)
-            .exclude(transcript__segment_id=pk)
-            .select_related('transcript__segment'),
-            centroid,
-            limit=RELATED_LIMIT,
-        )
-        return Response(ChunkResultSerializer(neighbours, many=True).data)
 
 
 class TopicListView(CacheControlMixin, ListAPIView):

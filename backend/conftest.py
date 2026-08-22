@@ -1,9 +1,9 @@
 """Pytest bootstrap for the backend.
 
-``corpus.Chunk.embedding`` is a pgvector column, so the test database has to be
-Postgres — SQLite cannot host it. These defaults point the suite at the docker
-compose ``db`` service as published on the host; anything already exported in
-the environment wins.
+The suite runs against Postgres for production parity (and the migration
+history still creates pgvector columns from 0001). These defaults point the
+suite at the docker compose ``db`` service as published on the host; anything
+already exported in the environment wins.
 """
 
 from __future__ import annotations

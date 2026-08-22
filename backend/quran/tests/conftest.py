@@ -3,6 +3,5 @@
 from api.tests.factories import (  # noqa: F401
     api,
     archive,
-    embedded_archive,
     reset_throttles,
 )

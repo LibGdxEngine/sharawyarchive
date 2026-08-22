@@ -145,7 +145,7 @@ paths:
     get:
       operationId: search_retrieve
       description: |-
-        ``GET /api/search/?q=&mode=&kind=&surah=&page=`` (API_CONTRACT.md).
+        ``GET /api/search/?q=&kind=&surah=&page=`` (API_CONTRACT.md).
 
         Never cached: results move with every pipeline run.
       parameters:
@@ -153,14 +153,6 @@ paths:
         name: kind
         schema:
           type: string
-      - in: query
-        name: mode
-        schema:
-          type: string
-          enum:
-          - hybrid
-          - lexical
-          - semantic
       - in: query
         name: page
         schema:
@@ -192,6 +184,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+          description: ''
+  /api/search/suggest/:
+    get:
+      operationId: search_suggest
+      description: |-
+        ``GET /api/search/suggest/?q=`` — autocomplete suggestions.
+
+        Returns a plain list of strings (matched chunk text snippets).
+        Never cached; results move with every pipeline run.
+      parameters:
+      - in: query
+        name: q
+        schema:
+          type: string
+        required: true
+      tags:
+      - search
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
           description: ''
   /api/segments/{id}/:
     get:
@@ -230,8 +251,9 @@ paths:
 
         The client already has the word array from ``/transcript/``; this says
         which passage each word belongs to, which is what a correction has to name
-        when it is submitted. Content-addressed like the transcript itself: the
-        spans only move when an approved correction bumps ``Transcript.version``.
+        when it is submitted. Short-lived cache, NOT immutable: the URL carries no
+        transcript version, and an approved correction can renumber word indices —
+        a year-old chunk map would target the wrong words.
 
         Assembled from two ``values_list`` queries rather than through the
         serializer, for the reason ``SegmentTranscriptView`` gives — the payload is
@@ -256,38 +278,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ChunkSpan'
-          description: ''
-  /api/segments/{id}/related/:
-    get:
-      operationId: segment_related_list
-      description: |-
-        ``GET /api/segments/{id}/related/`` — nearest passages elsewhere.
-
-        The segment is reduced to the centroid of its chunk embeddings, and the
-        corpus is searched by cosine distance to that centroid with the segment's
-        own chunks excluded. Cosine distance ignores magnitude, so the mean needs
-        no renormalization. A segment that has not been embedded yet returns ``[]``
-        rather than an error — embedding lags ingestion.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - segments
-      security:
-      - cookieAuth: []
-      - basicAuth: []
-      - {}
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ChunkResult'
           description: ''
   /api/segments/{id}/transcript/:
     get:
@@ -518,8 +508,8 @@ components:
     ChunkResult:
       type: object
       description: |-
-        The search-result shape, reused wherever chunks are surfaced (topics,
-        related passages) so one renderer on the frontend handles all of them.
+        The search-result shape, reused wherever chunks are surfaced (topics)
+        so one renderer on the frontend handles all of them.
         Mirrors :class:`search.services.SearchResult`.
       properties:
         chunk_id:
@@ -755,16 +745,6 @@ components:
       description: |-
         * `recitation` - Recitation
         * `khawatir` - Khawatir
-    ModeEnum:
-      enum:
-      - lexical
-      - semantic
-      - hybrid
-      type: string
-      description: |-
-        * `lexical` - lexical
-        * `semantic` - semantic
-        * `hybrid` - hybrid
     PresetEnum:
       enum:
       - classic
@@ -789,12 +769,14 @@ components:
       properties:
         query:
           type: string
-        mode:
-          $ref: '#/components/schemas/ModeEnum'
         ayah_matches:
           type: array
           items:
             $ref: '#/components/schemas/AyahMatch'
+        verse_matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerseMatch'
         results:
           type: array
           items:
@@ -805,11 +787,11 @@ components:
           type: integer
       required:
       - ayah_matches
-      - mode
       - page
       - query
       - results
       - total
+      - verse_matches
     SegmentDetail:
       type: object
       description: |-
@@ -1080,6 +1062,29 @@ components:
       - i
       - s
       - t
+    VerseMatch:
+      type: object
+      description: A mushaf verse found by full-text search over the canonical text.
+      properties:
+        surah:
+          type: integer
+        number:
+          type: integer
+        text_uthmani:
+          type: string
+        surah_name_ar:
+          type: string
+        juz:
+          type: integer
+        page:
+          type: integer
+      required:
+      - juz
+      - number
+      - page
+      - surah
+      - surah_name_ar
+      - text_uthmani
   securitySchemes:
     basicAuth:
       type: http

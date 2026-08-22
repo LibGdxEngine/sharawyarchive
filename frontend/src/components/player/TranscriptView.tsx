@@ -178,7 +178,7 @@ export default function TranscriptView({
             correcting ? leaveCorrectionMode() : setCorrecting(true)
           }
           aria-pressed={correcting}
-          className="text-xs text-[var(--color-ink-muted)] underline underline-offset-4"
+          className="listen-chip text-xs"
         >
           {correcting ? "إنهاء وضع التصحيح" : "اقتراح تصحيح"}
         </button>
@@ -189,17 +189,18 @@ export default function TranscriptView({
         ) : null}
       </div>
 
-      <div
-        ref={scrollRef}
-        tabIndex={0}
-        role="group"
-        aria-label="نص المقطع"
-        className="h-[60vh] overflow-y-auto overflow-x-hidden"
-      >
+      <div className="listen-transcript">
         <div
-          className="relative w-full"
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
+          ref={scrollRef}
+          tabIndex={0}
+          role="group"
+          aria-label="نص المقطع"
+          className="listen-transcript-scroll h-[60vh] overflow-y-auto overflow-x-hidden p-4"
         >
+          <div
+            className="relative w-full"
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const line = lines[virtualRow.index];
             const isActiveLine = line.index === activeLineIndex;
@@ -238,7 +239,7 @@ export default function TranscriptView({
                         aria-pressed={
                           correcting ? isWordSelected(selection, word.i) : undefined
                         }
-                        className={`inline cursor-pointer bg-transparent p-0 text-inherit ${
+                        className={`listen-word inline cursor-pointer bg-transparent text-inherit ${
                           word.i === activeWordIndex ? "word-active" : ""
                         } ${
                           isWordSelected(selection, word.i) ? "word-selected" : ""
@@ -252,6 +253,7 @@ export default function TranscriptView({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
@@ -269,7 +271,7 @@ export default function TranscriptView({
         <button
           type="button"
           onClick={resumeFollowing}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm text-[var(--color-ink)]"
+          className="listen-follow-pill absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full px-4 py-2 text-sm text-[var(--lp-gold-deep)] backdrop-blur-sm"
         >
           العودة إلى الموضع الحالي
         </button>

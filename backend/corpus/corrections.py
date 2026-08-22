@@ -33,7 +33,7 @@ Approval
    and every following ``idx`` is renumbered;
 3. the transcript's ``raw_text``/``text_normalized``/``word_count`` are
    recomputed, ``version`` is bumped and ``is_human_reviewed`` is set;
-4. only the chunks whose span overlaps the edit are rebuilt and re-embedded.
+4. only the chunks whose span overlaps the edit are rebuilt.
 
 The Meilisearch update is deliberately *not* part of that transaction:
 reindexing a row that a later rollback would revert is worse than a search
@@ -52,7 +52,6 @@ from django.db import transaction
 from django.db.models import F, Max
 
 from .arabic import normalize_for_index
-from .embeddings import get_embedder
 from .models import Chunk, Correction, CorrectionStatus, Transcript, TranscriptWord
 
 __all__ = [
@@ -88,7 +87,7 @@ class ApprovalResult:
     words_replaced: int
     words_written: int
     chunk_ids: tuple[int, ...]
-    """The chunks rebuilt, re-embedded and queued for reindexing."""
+    """The chunks rebuilt and queued for reindexing."""
     reviewed_by: str
 
 
@@ -277,12 +276,7 @@ def _rebuild_chunks(transcript: Transcript, *, start_ms: int, end_ms: int) -> li
         )
         chunk.text = text
         chunk.text_normalized = normalize_for_index(text)
-    # The normalized form is embedded, exactly as the pipeline's embed stage
-    # does, so corrected passages stay in the same space as the queries.
-    vectors = get_embedder().embed_passages([chunk.text_normalized for chunk in chunks])
-    for chunk, vector in zip(chunks, vectors, strict=True):
-        chunk.embedding = vector
-    Chunk.objects.bulk_update(chunks, ["text", "text_normalized", "embedding"])
+    Chunk.objects.bulk_update(chunks, ["text", "text_normalized"])
     return chunks
 
 

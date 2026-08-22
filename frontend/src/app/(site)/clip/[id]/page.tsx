@@ -103,13 +103,20 @@ export default async function ClipPage({
     <main className="reading-column page-shell pt-8">
       <h1 className="text-2xl font-semibold leading-snug">{TITLE}</h1>
 
-      {clip.status === "done" && clip.video_url !== null ? (
+      {clip.status === "done" && clip.output === "video" && clip.video_url !== null ? (
         <video
           controls
           playsInline
           preload="metadata"
           src={clip.video_url}
           className="mt-6 w-full border border-[var(--color-border)]"
+        />
+      ) : clip.status === "done" && clip.output === "audio" && clip.audio_url !== null ? (
+        <audio
+          controls
+          preload="metadata"
+          src={clip.audio_url}
+          className="mt-6 w-full"
         />
       ) : (
         <p className="mt-6 text-sm text-[var(--color-ink-muted)]">
@@ -125,6 +132,15 @@ export default async function ClipPage({
             className="text-[var(--color-ink)] underline underline-offset-4"
           >
             تنزيل الفيديو
+          </a>
+        ) : null}
+        {clip.audio_url !== null ? (
+          <a
+            href={clip.audio_url}
+            download
+            className="text-[var(--color-ink)] underline underline-offset-4"
+          >
+            تنزيل الصوت
           </a>
         ) : null}
         <Link

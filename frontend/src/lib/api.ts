@@ -6,7 +6,6 @@ import type {
   Segment,
   SegmentChunk,
   Transcript,
-  SearchChunkResult,
   SearchResponse,
   Topic,
   TopicDetail,
@@ -15,11 +14,13 @@ import type {
   Clip,
 } from "@/types/models";
 
-const BASE_URL =
-  (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api").replace(
-    /\/$/,
-    ""
-  );
+const BASE_URL = (
+  typeof window === "undefined"
+    ? (process.env.BACKEND_API_URL ??
+      process.env.NEXT_PUBLIC_API_URL ??
+      "http://localhost:8000/api")
+    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api")
+).replace(/\/$/, "");
 
 /**
  * A non-2xx API response.
@@ -91,14 +92,6 @@ export function getSegmentChunks(id: number): Promise<SegmentChunk[]> {
   return apiFetch<SegmentChunk[]>(`/segments/${id}/chunks/`);
 }
 
-/**
- * Passages elsewhere in the archive that sit near this segment in embedding
- * space. Returns the search-result shape, so the same renderer handles them.
- */
-export function getRelated(id: number): Promise<SearchChunkResult[]> {
-  return apiFetch<SearchChunkResult[]>(`/segments/${id}/related/`);
-}
-
 export function getTranscript(id: number, version?: number): Promise<Transcript> {
   const qs = version !== undefined ? `?v=${version}` : "";
   return apiFetch<Transcript>(`/segments/${id}/transcript/${qs}`, {
@@ -113,7 +106,6 @@ export function getTranscript(id: number, version?: number): Promise<Transcript>
 
 export interface SearchParams {
   q: string;
-  mode?: "hybrid" | "lexical" | "semantic";
   kind?: "recitation" | "khawatir";
   surah?: number;
   page?: number;
@@ -121,7 +113,6 @@ export interface SearchParams {
 
 export function search(params: SearchParams): Promise<SearchResponse> {
   const sp = new URLSearchParams({ q: params.q });
-  if (params.mode) sp.set("mode", params.mode);
   if (params.kind) sp.set("kind", params.kind);
   if (params.surah !== undefined) sp.set("surah", String(params.surah));
   if (params.page !== undefined) sp.set("page", String(params.page));
@@ -198,6 +189,8 @@ export interface ClipPayload {
   start_ms: number;
   end_ms: number;
   preset: string;
+  /** "video" (the default) or "audio". */
+  output?: "video" | "audio";
 }
 
 export function createClip(payload: ClipPayload): Promise<ClipCreateResponse> {

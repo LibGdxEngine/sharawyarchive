@@ -6,6 +6,7 @@ import KeyboardShortcuts from "@/components/player/KeyboardShortcuts";
 import PlayerBar from "@/components/player/PlayerBar";
 import InstallPrompt from "@/components/InstallPrompt";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
+import RecentSegmentsTracker from "@/components/RecentSegmentsTracker";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const viewport: Viewport = {
@@ -64,6 +65,7 @@ export default function RootLayout({
         */}
         <GlobalAudio />
         <KeyboardShortcuts />
+        <RecentSegmentsTracker />
         {children}
         <PlayerBar />
         {/* PWA: service worker registration (production only) */}

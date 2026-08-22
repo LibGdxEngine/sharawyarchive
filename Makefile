@@ -1,4 +1,4 @@
-.PHONY: help up down build restart ps logs logs-backend logs-frontend shell backend-shell frontend-shell makemigrations migrate createsuperuser test-backend test-frontend clean prod-up prod-down prod-build dev be fe test lint types
+.PHONY: help up down build restart ps logs logs-backend logs-frontend shell backend-shell frontend-shell fe-fresh makemigrations migrate createsuperuser test-backend test-frontend clean prod-up prod-down prod-build dev be fe test lint types
 
 VENV ?= .venv
 PY := $(abspath $(VENV))/bin/python
@@ -55,6 +55,7 @@ help:
 	@echo ""
 	@echo "Frontend Operations:"
 	@echo "  frontend-shell    - Open sh shell inside frontend container"
+	@echo "  fe-fresh          - Recreate frontend container with fresh anon volumes"
 	@echo ""
 	@echo "Testing & Quality:"
 	@echo "  test-backend      - Run Django unit tests"
@@ -98,6 +99,9 @@ logs-frontend:
 migrate:
 	docker compose exec backend python manage.py migrate
 
+index-quran:
+	docker compose exec backend python manage.py index_quran
+
 makemigrations:
 	docker compose exec backend python manage.py makemigrations
 
@@ -113,6 +117,12 @@ backend-shell:
 # Frontend Commands
 frontend-shell:
 	docker compose exec frontend sh
+
+# Recreate the frontend container with fresh anonymous volumes. The /app/.next
+# and /app/node_modules volumes outlive restarts and image rebuilds, so a stale
+# Next dev cache or stale deps can only be cleared by renewing them.
+fe-fresh:
+	docker compose up -d --force-recreate --renew-anon-volumes frontend
 
 # Testing Commands
 test-backend:

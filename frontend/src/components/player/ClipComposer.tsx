@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, createClip, getClip } from "@/lib/api";
 import { useAudioStore } from "@/lib/audio-store";
 import {
-  MAX_CLIP_MS,
   MIN_CLIP_MS,
   canClipSegment,
   defaultClipRange,
@@ -14,10 +13,18 @@ import {
 } from "@/lib/clip-range";
 import type { ClipRange } from "@/lib/clip-range";
 import { formatMs } from "@/lib/format";
-import type { Clip, ClipStatus, Segment, Waveform } from "@/types/models";
+import type {
+  Clip,
+  ClipOutput,
+  ClipStatus,
+  Segment,
+  Waveform,
+} from "@/types/models";
 
 interface ClipComposerProps {
   segment: Segment;
+  /** Closes an embedding surface (the standalone page has no such bar). */
+  onClose?: () => void;
 }
 
 /** Server-side render presets — the swatches mirror what the video will look like. */
@@ -72,37 +79,16 @@ function playheadMs(segmentId: number): number {
 }
 
 /**
- * "مقطع للمشاركة" — the entry point on the player screen.
+ * "مقطع للمشاركة" — the clip composer.
  *
- * The body is mounted only while open, so closing it drops the draft range,
- * the preset and any in-flight polling without extra bookkeeping.
+ * Shown as a standalone page at `/listen/[segmentId]/clip`; `onClose` turns the
+ * cancel action into a back button when the composer is embedded somewhere
+ * that can return.
  */
-export default function ClipComposer({ segment }: ClipComposerProps) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((previous) => !previous)}
-        aria-expanded={open}
-        className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-ink-muted)]"
-      >
-        {open ? "إغلاق المقطع" : "مقطع للمشاركة"}
-      </button>
-      {open ? (
-        <ClipComposerBody segment={segment} onClose={() => setOpen(false)} />
-      ) : null}
-    </>
-  );
-}
-
-interface ClipComposerBodyProps {
-  segment: Segment;
-  onClose: () => void;
-}
-
-function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
+export default function ClipComposer({
+  segment,
+  onClose,
+}: ClipComposerProps) {
   const durationMs = segment.duration_ms;
   const clippable = canClipSegment(durationMs);
 
@@ -110,6 +96,7 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
     defaultClipRange(playheadMs(segment.id), durationMs)
   );
   const [preset, setPreset] = useState<PresetId>("classic");
+  const [output, setOutput] = useState<ClipOutput>("video");
 
   // null = still loading, [] = unavailable (falls back to two sliders).
   const [peaks, setPeaks] = useState<number[] | null>(null);
@@ -249,8 +236,15 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
         start_ms: range.startMs,
         end_ms: range.endMs,
         preset,
+        output,
       });
-      setClip({ id: created.id, status: created.status, video_url: null });
+      setClip({
+        id: created.id,
+        status: created.status,
+        output,
+        video_url: null,
+        audio_url: null,
+      });
       setClipId(created.id);
     } catch (error) {
       setMessage(
@@ -272,7 +266,7 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
   return (
     <section
       aria-label="إنشاء مقطع للمشاركة"
-      className="mt-4 basis-full border-t border-[var(--color-border)] pt-4"
+      className="mt-4 basis-full border-t border-[var(--lp-card-border)] pt-4"
     >
       {!clippable ? (
         <p className="text-sm text-[var(--color-ink-muted)]">
@@ -290,7 +284,7 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
             <div
               ref={trackRef}
               dir="ltr"
-              className="relative h-16 w-full touch-none select-none border border-[var(--color-border)]"
+              className="relative h-16 w-full touch-none select-none border border-[var(--lp-card-border)]"
             >
               <svg
                 viewBox={`0 0 ${bars.length} 100`}
@@ -374,23 +368,28 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
             <span dir="ltr" className="tabular-nums">
               {formatMs(range.startMs)} – {formatMs(range.endMs)}
             </span>{" "}
-            · المدة {Math.round(spanMs / 1000)} ثانية · المسموح بين{" "}
-            {MIN_CLIP_MS / 1000} و {MAX_CLIP_MS / 1000} ثانية
+            · المدة {Math.round(spanMs / 1000)} ثانية · الحد الأدنى{" "}
+            {MIN_CLIP_MS / 1000} ثانية وحتى نهاية المقطع
           </p>
 
-          {/* ---- presets ------------------------------------------------- */}
+          {/* ---- output ------------------------------------------------- */}
           <fieldset className="mt-4">
             <legend className="text-xs text-[var(--color-ink-faint)]">
-              الشكل
+              الصيغة
             </legend>
             <div className="mt-2 flex flex-wrap gap-3">
-              {PRESETS.map((option) => {
-                const selected = option.id === preset;
+              {(
+                [
+                  { id: "video", label: "فيديو" },
+                  { id: "audio", label: "صوت فقط" },
+                ] as const
+              ).map((option) => {
+                const selected = option.id === output;
                 return (
                   <button
                     key={option.id}
                     type="button"
-                    onClick={() => setPreset(option.id)}
+                    onClick={() => setOutput(option.id)}
                     aria-pressed={selected}
                     className="flex items-center gap-2 border px-2 py-1.5 text-xs"
                     style={{
@@ -402,20 +401,6 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
                         : "var(--color-ink-muted)",
                     }}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="flex h-6 w-4 flex-col justify-end gap-0.5 p-0.5"
-                      style={{ backgroundColor: option.bg }}
-                    >
-                      <span
-                        className="block h-0.5 w-full"
-                        style={{ backgroundColor: option.ink }}
-                      />
-                      <span
-                        className="block h-0.5 w-2/3"
-                        style={{ backgroundColor: option.ink }}
-                      />
-                    </span>
                     {option.label}
                   </button>
                 );
@@ -423,23 +408,83 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
             </div>
           </fieldset>
 
+          {/* ---- presets ------------------------------------------------- */}
+          {output === "video" ? (
+            <fieldset className="mt-4">
+              <legend className="text-xs text-[var(--color-ink-faint)]">
+                الشكل
+              </legend>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {PRESETS.map((option) => {
+                  const selected = option.id === preset;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setPreset(option.id)}
+                      aria-pressed={selected}
+                      className="flex items-center gap-2 border px-2 py-1.5 text-xs"
+                      style={{
+                        borderColor: selected
+                          ? "var(--color-ink)"
+                          : "var(--color-border)",
+                        color: selected
+                          ? "var(--color-ink)"
+                          : "var(--color-ink-muted)",
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="flex h-6 w-4 flex-col justify-end gap-0.5 p-0.5"
+                        style={{ backgroundColor: option.bg }}
+                      >
+                        <span
+                          className="block h-0.5 w-full"
+                          style={{ backgroundColor: option.ink }}
+                        />
+                        <span
+                          className="block h-0.5 w-2/3"
+                          style={{ backgroundColor: option.ink }}
+                        />
+                      </span>
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ) : null}
+
           {/* ---- submit + status ---------------------------------------- */}
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => void submit()}
               disabled={creating || clipId !== null}
-              className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-ink)] disabled:opacity-50"
+              className="listen-chip"
             >
-              {creating ? "جارٍ الإرسال…" : "إنشاء المقطع"}
+              {creating
+                ? "جارٍ الإرسال…"
+                : output === "audio"
+                  ? "إنشاء الصوت"
+                  : "إنشاء الفيديو"}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-sm text-[var(--color-ink-muted)]"
-            >
-              إلغاء
-            </button>
+            {onClose !== undefined ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-sm text-[var(--color-ink-muted)]"
+              >
+                إلغاء
+              </button>
+            ) : (
+              <Link
+                href={`/listen/${segment.id}`}
+                className="text-sm text-[var(--color-ink-muted)] underline underline-offset-4"
+              >
+                العودة إلى الاستماع
+              </Link>
+            )}
             {message !== "" ? (
               <span role="status" className="text-xs text-[var(--color-ink-muted)]">
                 {message}
@@ -469,6 +514,15 @@ function ClipComposerBody({ segment, onClose }: ClipComposerBodyProps) {
                       className="text-[var(--color-ink-muted)] underline underline-offset-4"
                     >
                       تنزيل الفيديو
+                    </a>
+                  ) : null}
+                  {clip.audio_url !== null ? (
+                    <a
+                      href={clip.audio_url}
+                      download
+                      className="text-[var(--color-ink-muted)] underline underline-offset-4"
+                    >
+                      تنزيل الصوت
                     </a>
                   ) : null}
                 </p>

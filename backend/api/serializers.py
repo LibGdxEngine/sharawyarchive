@@ -12,7 +12,6 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from corpus.serializers import ChunkResultSerializer
-from search.services import SEARCH_MODES
 
 
 class AyahMatchSerializer(serializers.Serializer):
@@ -24,12 +23,23 @@ class AyahMatchSerializer(serializers.Serializer):
     surah_name_ar = serializers.CharField()
 
 
+class VerseMatchSerializer(serializers.Serializer):
+    """A mushaf verse found by full-text search over the canonical text."""
+
+    surah = serializers.IntegerField()
+    number = serializers.IntegerField()
+    text_uthmani = serializers.CharField()
+    surah_name_ar = serializers.CharField()
+    juz = serializers.IntegerField()
+    page = serializers.IntegerField()
+
+
 class SearchResponseSerializer(serializers.Serializer):
     """``GET /api/search/`` — mirrors :class:`search.services.SearchResponse`."""
 
     query = serializers.CharField()
-    mode = serializers.ChoiceField(choices=SEARCH_MODES)
     ayah_matches = AyahMatchSerializer(many=True)
+    verse_matches = VerseMatchSerializer(many=True)
     results = ChunkResultSerializer(many=True)
     page = serializers.IntegerField()
     total = serializers.IntegerField()

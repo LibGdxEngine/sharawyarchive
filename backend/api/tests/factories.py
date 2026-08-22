@@ -24,7 +24,6 @@ from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from corpus.arabic import normalize_for_index
-from corpus.embeddings import StubEmbedder
 from corpus.models import (
     AudioAsset,
     Chunk,
@@ -77,8 +76,8 @@ class Archive:
     segment: Segment
     """Covers ayahs 1-2, has a 20-word transcript and three chunks."""
     other: Segment
-    """Covers ayah 1 only; exists so coverage counts and ``/related/`` have a
-    second thing to point at."""
+    """Covers ayah 1 only; exists so coverage counts have a second thing to
+    point at."""
     transcript: Transcript
     words: list[TranscriptWord] = field(default_factory=list)
     chunks: list[Chunk] = field(default_factory=list)
@@ -269,23 +268,9 @@ def make_topic(
     return topic
 
 
-def embed(chunks: list[Chunk]) -> None:
-    """Give ``chunks`` deterministic stub embeddings."""
-    vectors = StubEmbedder().embed_passages([chunk.text for chunk in chunks])
-    for chunk, vector in zip(chunks, vectors, strict=True):
-        chunk.embedding = vector
-    Chunk.objects.bulk_update(chunks, ['embedding'])
-
-
 @pytest.fixture
 def archive(db: None) -> Archive:
     return build_archive()
-
-
-@pytest.fixture
-def embedded_archive(archive: Archive) -> Archive:
-    embed(archive.chunks + archive.other_chunks)
-    return archive
 
 
 @pytest.fixture

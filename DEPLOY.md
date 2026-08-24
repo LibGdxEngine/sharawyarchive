@@ -41,6 +41,9 @@ for `DOMAIN_NAME` automatically.
 
 ## 3. Seed data
 
+If you were handed a corpus database dump (transcripts already made), skip
+this section and follow §8 instead — the dump already contains the Quran text.
+
 ```bash
 docker compose -f docker-compose.prod.yml exec backend python manage.py import_quran
 docker compose -f docker-compose.prod.yml exec backend python manage.py index_quran   # idempotent; builds the full-text ayahs index
@@ -107,8 +110,80 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 ```
 
 Migrations run on container start. Meilisearch reindexing is only needed when
-chunk data changes (`python manage.py shell` → `search.services.ensure_chunks_index()`
-+ reindex, or re-run the pipeline `index` stage).
+chunk data changes or the search volume is rebuilt:
+`python manage.py index_chunks` (idempotent upsert of every chunk row).
+
+## 8. Import the corpus database dump
+
+Use this instead of §3's ingestion when the corpus was transcribed elsewhere
+(the dev workstation) and handed over as a Postgres dump produced by
+`scripts/backup.sh`. The dump carries everything: Quran text, sources, audio
+asset metadata, transcripts, word timings, chunks, topics, corrections and
+accounts. It does **not** carry Meilisearch indexes or audio bytes — those are
+rebuilt / already in R2 below.
+
+Prerequisites: the stack is up per §1–2 (so `db` exists and migrations have
+run once), `.env` holds the R2 credentials (`AUDIO_S3_*` — `restore.sh` falls
+back to them, or set `BACKUP_S3_*` explicitly), and the `aws` CLI is installed.
+
+```bash
+cd /srv/shaarawy && set -a && . ./.env && set +a
+
+# 1. Stop everything that holds a DB connection (Caddy can stay up).
+docker compose -f docker-compose.prod.yml stop backend celery_worker celery_beat
+
+# 2. Restore. The dump was taken from a dev database named "postgres"; the name
+#    is irrelevant — restore.sh drops and recreates the target database, and
+#    custom-format dumps are database-name-agnostic. DB_USER is POSTGRES_USER,
+#    i.e. a superuser inside the pgvector image, so the dump's
+#    CREATE EXTENSION vector restores without privilege errors.
+DB_NAME="$DB_NAME" DB_USER="$DB_USER" \
+  scripts/restore.sh backups/postgres/postgres-<STAMP>.dump "$DB_NAME" docker-compose.prod.yml
+# (a local file path works too: scripts/restore.sh /path/to/postgres-<STAMP>.dump "$DB_NAME" docker-compose.prod.yml)
+
+# 3. Bring the app back. entrypoint.sh runs migrate (expect "No migrations to
+#    apply" — the dump and the checkout are the same commit) and index_quran.
+docker compose -f docker-compose.prod.yml up -d
+
+# 4. Rebuild search. Meilisearch starts empty and the pipeline's index stage
+#    would skip these segments (they are already marked indexed).
+docker compose -f docker-compose.prod.yml exec backend python manage.py index_quran
+docker compose -f docker-compose.prod.yml exec backend python manage.py index_chunks
+```
+
+Audio needs no copying: the Opus derivatives and waveforms were pushed to R2
+(`manage.py sync_storage_to_r2`) before the dump was taken, and the API signs
+R2 URLs directly — just confirm `AUDIO_S3_BUCKET=shaarawy` and the R2 endpoint
+in `.env`.
+
+**Rotate the dev accounts.** The dump includes the dev workstation's Django
+users (a superuser with a development password). Before exposing the site:
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+docker compose -f docker-compose.prod.yml exec backend python manage.py shell -c \
+  "from django.contrib.auth import get_user_model as g; U=g(); \
+   print(U.objects.exclude(username='<new-superuser>').update(is_active=False), 'dev accounts deactivated')"
+```
+
+**Verify** (numbers in brackets are the dev-side counts recorded at dump time —
+fill them in from the hand-over note):
+
+```bash
+curl -fsS https://$DOMAIN/healthz && curl -fsS https://$DOMAIN/readyz
+docker compose -f docker-compose.prod.yml exec db psql -U "$DB_USER" -d "$DB_NAME" -tAc "
+SELECT 'segments:'||status||'='||count(*) FROM corpus_segment GROUP BY status
+UNION ALL SELECT 'transcripts='||count(*) FROM corpus_transcript
+UNION ALL SELECT 'engine:'||engine||'='||count(*) FROM corpus_transcript GROUP BY engine
+UNION ALL SELECT 'words='||count(*) FROM corpus_transcriptword
+UNION ALL SELECT 'chunks='||count(*) FROM corpus_chunk
+UNION ALL SELECT 'ayahs='||count(*) FROM quran_ayah;"
+```
+
+The `engine` line must show only `cohere-transcribe`; `ayahs=6236`. Then, in
+the UI, search a phrase you know occurs in one segment, open it, play it and
+confirm the word highlighting follows the audio (that proves both the R2
+signing and the word timings survived the move).
 
 ## 7. Observability
 

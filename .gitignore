@@ -13,3 +13,5 @@ frontend/public/sw.js
 frontend/public/sw.js.map
 data/
 .env.local
+*.dump
+*.sql

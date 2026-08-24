@@ -22,5 +22,7 @@ else
   : "${AUDIO_S3_ENDPOINT_URL:?PIPELINE_STORAGE=r2 needs AUDIO_S3_ENDPOINT_URL}"
 fi
 export ASR_BACKEND="${ASR_BACKEND:-cohere}" ALIGNER_BACKEND="${ALIGNER_BACKEND:-ctc}"
+# Per-segment lines must reach a redirected log as they happen, not in 8 KB bursts.
+export PYTHONUNBUFFERED=1
 exec .venv/bin/python -m pipeline.run \
   --source-title "تفسير الشعراوي — المجموعة الكاملة" --kind khawatir "$@"

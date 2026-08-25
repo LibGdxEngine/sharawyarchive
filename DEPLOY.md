@@ -185,6 +185,68 @@ the UI, search a phrase you know occurs in one segment, open it, play it and
 confirm the word highlighting follows the audio (that proves both the R2
 signing and the word timings survived the move).
 
+## 9. Finishing ingestion on a rented GPU host
+
+Forced alignment is ~90% of the pipeline's wall-clock and runs at about 0.4×
+realtime on a laptop CPU — two weeks for the 671-hour corpus. A GPU host does
+it in hours. Everything the host needs is already in R2: the raw MP3s
+(`corpus/mp3/`, with `corpus/r2_corpus_mapping.json` recording each file's
+original path), and the latest database dump (`backups/postgres/`), so the
+run resumes from wherever the previous machine stopped.
+
+Sizing: any NVIDIA GPU with ≥ 6 GB VRAM (T4 / RTX 3060 class is plenty —
+the aligner model is 1.2 GB), 8 vCPU for ffmpeg, 16 GB RAM, 40 GB disk
+(7.3 GB audio + Python env + Docker). Ubuntu 22.04/24.04 with the NVIDIA
+driver installed, Docker + Compose v2, `ffmpeg`, Python 3.12.
+
+```bash
+git clone <repo> shaarawy && cd shaarawy
+# .env.local (chmod 600): CO_API_KEY, AUDIO_S3_ACCESS_KEY_ID/_SECRET_ACCESS_KEY (R2),
+#                         R2_ACCESS_KEY_ID/_SECRET_ACCESS_KEY (same R2 token)
+set -a; . ./.env.local; set +a
+
+# 1. Services (dev compose; MinIO is not needed — audio goes straight to R2).
+docker compose up -d db redis meilisearch
+
+# 2. Python env, then swap the CPU ONNX runtime / torch for CUDA builds.
+python3.12 -m venv .venv && . .venv/bin/activate
+pip install -r pipeline/requirements.txt
+pip uninstall -y onnxruntime && pip install onnxruntime-gpu
+pip install --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+python -c "import onnxruntime as o, torch; print(o.get_available_providers(), torch.cuda.is_available())"
+#   → CUDAExecutionProvider must be listed and torch.cuda.is_available() True
+python -c "import os; from ctc_forced_aligner import ensure_onnx_model, MODEL_URL; \
+  ensure_onnx_model(os.path.expanduser('~/.cache/ctc_forced_aligner/model.onnx'), MODEL_URL)"
+
+# 3. Database: restore the latest dump into a database named "shaarawy"
+#    (restore.sh cannot drop the "postgres" database it connects through).
+pip install awscli
+export BACKUP_S3_ENDPOINT_URL=https://6452da3166483560913682a6dd5a5b77.r2.cloudflarestorage.com
+scripts/restore.sh backups/postgres/postgres-<STAMP>.dump shaarawy docker-compose.yml
+export DB_NAME=shaarawy          # pipeline + status script pick this up
+
+# 4. Corpus audio, byte-identical to the ingesting machine's data/ layout.
+python scripts/fetch_corpus_from_r2.py --workers 16
+
+# 5. Run. Completed segments are skipped in seconds; re-running is the retry.
+mkdir -p .omc/logs
+PIPELINE_STORAGE=r2 AUDIO_S3_ENDPOINT_URL=https://6452da3166483560913682a6dd5a5b77.r2.cloudflarestorage.com \
+  nohup scripts/pipeline_corpus.sh > .omc/logs/corpus-run.log 2>&1 &
+date -u +%FT%TZ > .omc/logs/corpus-run-start.txt
+scripts/pipeline_status.sh          # progress from the DB; nvidia-smi should show the aligner busy
+```
+
+`pipeline_local.sh` forces MinIO unless `PIPELINE_STORAGE=r2` is set, so do
+not drop that variable — without it the host would try to reach a MinIO that
+is not running.
+
+When `scripts/pipeline_status.sh` reports `pending=0` (re-run the loop once
+more for any `failed` segments; a handful of unreadable files is acceptable
+if documented), take the final dump — `DB_NAME=shaarawy BACKUP_S3_ENDPOINT_URL=<R2 endpoint> scripts/backup.sh docker-compose.yml` —
+and follow §8 on the production host. `sync_storage_to_r2` is unnecessary
+for segments processed on this host: their Opus and waveforms were written to
+R2 directly.
+
 ## 7. Observability
 
 ### Sentry

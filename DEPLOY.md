@@ -156,14 +156,13 @@ Audio needs no copying: the Opus derivatives and waveforms were pushed to R2
 R2 URLs directly — just confirm `AUDIO_S3_BUCKET=shaarawy` and the R2 endpoint
 in `.env`.
 
-**Rotate the dev accounts.** The dump includes the dev workstation's Django
-users (a superuser with a development password). Before exposing the site:
+**Accounts.** The dump carries no Django users (verify: the query below
+should print `users=0`), so create the production superuser now. If a future
+dump was taken from a machine that had accounts, deactivate them here as well.
 
 ```bash
+docker compose -f docker-compose.prod.yml exec db psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT 'users='||count(*) FROM auth_user;"
 docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
-docker compose -f docker-compose.prod.yml exec backend python manage.py shell -c \
-  "from django.contrib.auth import get_user_model as g; U=g(); \
-   print(U.objects.exclude(username='<new-superuser>').update(is_active=False), 'dev accounts deactivated')"
 ```
 
 **Verify** (numbers in brackets are the dev-side counts recorded at dump time —
@@ -218,12 +217,16 @@ python -c "import onnxruntime as o, torch; print(o.get_available_providers(), to
 python -c "import os; from ctc_forced_aligner import ensure_onnx_model, MODEL_URL; \
   ensure_onnx_model(os.path.expanduser('~/.cache/ctc_forced_aligner/model.onnx'), MODEL_URL)"
 
-# 3. Database: restore the latest dump into a database named "shaarawy"
-#    (restore.sh cannot drop the "postgres" database it connects through).
-pip install awscli
-export BACKUP_S3_ENDPOINT_URL=https://6452da3166483560913682a6dd5a5b77.r2.cloudflarestorage.com
-scripts/restore.sh backups/postgres/postgres-<STAMP>.dump shaarawy docker-compose.yml
+# 3. Database: restore the committed snapshot (db/shaarawy.dump, see db/README.md)
+#    into a database named "shaarawy" — restore.sh cannot drop the "postgres"
+#    database it connects through. A newer dump from R2 works the same way:
+#    pip install awscli; export BACKUP_S3_ENDPOINT_URL=<R2 endpoint>;
+#    scripts/restore.sh backups/postgres/postgres-<STAMP>.dump shaarawy docker-compose.yml
+sha256sum -c db/shaarawy.dump.sha256
+scripts/restore.sh db/shaarawy.dump shaarawy docker-compose.yml
 export DB_NAME=shaarawy          # pipeline + status script pick this up
+docker compose exec -T db psql -U postgres -d shaarawy -tAc "SELECT status, count(*) FROM corpus_segment GROUP BY 1;"
+#   → compare with db/shaarawy.dump.counts.txt
 
 # 4. Corpus audio, byte-identical to the ingesting machine's data/ layout.
 python scripts/fetch_corpus_from_r2.py --workers 16

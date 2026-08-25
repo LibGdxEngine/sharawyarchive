@@ -1,0 +1,11 @@
+--- counts at dump time:
+segments:transcribed=1
+segments:indexed=125
+segments:pending=4231
+transcripts=126
+words=203962
+chunks=4505
+sources=1
+assets=4357
+surahs=114
+ayahs=6236

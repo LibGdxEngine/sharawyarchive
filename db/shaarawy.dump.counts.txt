@@ -1,11 +1,11 @@
 --- counts at dump time:
-segments:transcribed=1
-segments:indexed=125
-segments:pending=4231
-transcripts=126
-words=203962
-chunks=4505
+segments:indexed=4347
+segments:failed=10
+transcripts=4353
+words=4451304
+chunks=102655
 sources=1
 assets=4357
 surahs=114
 ayahs=6236
+r2_custom_dump=backups/postgres/postgres-20260827T173712Z.dump

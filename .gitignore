@@ -15,4 +15,4 @@ data/
 .env.local
 *.dump
 *.sql
-!db/shaarawy.dump
+!db/shaarawy.sql.xz

@@ -90,3 +90,10 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - CO_API_KEY stored in gitignored .env.local (chmod 600), never committed.
 - Live smoke on data/CD-1/001 alfat7a/001_002_002.mp3 (112s) with cohere-transcribe-arabic-07-2026: 141 words of genuine Sha'rawy tafseer on the divine names in the basmala — correct style, correct content, one visible slip (الحمل/الحمد) at expected WER level.
 - Full-corpus transcode ingest running concurrently (--until transcode); torch+ctc-forced-aligner installing for word timings; surah-1 checkpoint next (--until chunk; embed/index deferred until disk/R2 allows e5).
+
+## Smart search — Phase 0 audit (2026-09-02)
+- Two-mode search programme started (exact «بحث دقيق» + smart «بحث ذكي»); plan and audit in docs/smart-search/.
+- Audit facts: NO embeddings exist (dropped 2026-08-21, corpus.0003); chunks are 20–45 s silence units (avg 43 words, 102,655 rows, zero overlap); prod = gunicorn sync WSGI ×2 workers; API fully anonymous (0 users); all 4,357 segments carry surah+ayah range; Postgres `arabic` FTS present but leaves وال/و/ف clitics in place (verified live) → our own light stemmer.
+- Owner decisions: new `search.Passage` table over existing chunks (Chunk untouched); embeddings `qwen/qwen3-embedding-8b` via OpenRouter at 1024 dims (halfvec); exact mode gets a stem tier in the verifier with 4/8 thresholds kept and quotes = zero typos; anonymous access 20/h/IP with a $5/day cap; Arabic-only answers.
+- Verified OpenRouter slugs/prices: google/gemini-3.1-flash-lite ($0.25/$1.50), google/gemini-3.8-flash ($0.75/$3.75), qwen/qwen3-embedding-8b ($0.01/M; corpus ≈ $0.15).
+- Work happens in a separate worktree (/root/home/sharawyarchive-smart) so the production checkout, which other sessions edit, is never swept into a branch.

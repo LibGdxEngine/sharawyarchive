@@ -31,7 +31,7 @@ import {
 import AyahCard from "./AyahCard";
 import ClipModal from "./ClipModal";
 import SelectionToolbar from "./SelectionToolbar";
-import { useRangePlayback } from "./useRangePlayback";
+import { useRangePlayback } from "@/components/clip/useRangePlayback";
 import type { Segment, TranscriptWord } from "@/types/models";
 
 /** Tafseer paragraphs break on the Sheikh's pauses, capped for virtualization. */

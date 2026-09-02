@@ -154,9 +154,16 @@ def ffmpeg_command(
         '-filter_complex',
         # showwaves paints the wave on black; `blend=screen` turns that black
         # into the preset colour, and `ass` burns the karaoke card on top.
+        #
+        # The blend must happen in RGB. `screen` is an RGB operator, and on
+        # yuv420p it screens the chroma planes as if they were colour channels
+        # — which lifts U and V towards 255 and renders the whole card magenta
+        # on a near-black preset. Verified against ffmpeg 5.1: gbrp in, blend,
+        # yuv420p back out.
         f'[0:a]showwaves=s={FRAME_SIZE}:mode=cline:rate={FRAME_RATE}:'
-        f'colors={_wave_colour(preset)}:scale=sqrt,format=yuv420p[wave];'
-        f'[1:v][wave]blend=all_mode=screen:shortest=1[v0];'
+        f'colors={_wave_colour(preset)}:scale=sqrt,format=gbrp[wave];'
+        f'[1:v]format=gbrp[bg];'
+        f'[bg][wave]blend=all_mode=screen:shortest=1,format=yuv420p[v0];'
         f'[v0]ass={_escape_filter_path(str(ass_path))}[v]',
         '-map',
         '[v]',

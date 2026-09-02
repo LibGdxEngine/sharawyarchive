@@ -214,6 +214,23 @@ export interface Clip {
   id: string;
   status: ClipStatus;
   output: ClipOutput;
+  /** Presigned bucket URL, expires in hours. Prefer {@link Clip.media_url}. */
   video_url: string | null;
+  /** Presigned bucket URL, expires in hours. Prefer {@link Clip.media_url}. */
   audio_url: string | null;
+  /**
+   * Same-origin address of the rendered bytes, whichever output this job
+   * produced. It re-signs the bucket object per request, so unlike the two
+   * presigned URLs above it is safe to embed in a shared page or an OpenGraph
+   * card. Null until the render is `done`.
+   */
+  media_url: string | null;
+  /**
+   * The same bytes served as an attachment. A bare `<a download>` pointing at
+   * the bucket is ignored by the browser — different origin — so this is the
+   * only address that actually saves a file.
+   */
+  download_url: string | null;
+  /** The Arabic name the browser will save {@link Clip.download_url} under. */
+  download_filename: string | null;
 }

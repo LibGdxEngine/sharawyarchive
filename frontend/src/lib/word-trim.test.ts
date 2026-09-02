@@ -4,7 +4,9 @@ import {
   isTrimLegal,
   moveTrimEnd,
   moveTrimStart,
+  nearestWordIndex,
   trimFromRange,
+  trimFromTimes,
   trimTimesMs,
 } from "./word-trim";
 import type { TranscriptWord } from "@/types/models";
@@ -94,5 +96,55 @@ describe("moveTrimStart / moveTrimEnd", () => {
     expect(moveTrimEnd(WORDS, base, 0).endWord).toBeGreaterThanOrEqual(
       base.startWord
     );
+  });
+});
+
+describe("nearestWordIndex", () => {
+  it("finds the word being spoken", () => {
+    // word 7 spans [7000, 7800].
+    expect(nearestWordIndex(WORDS, 7_000)).toBe(7);
+    expect(nearestWordIndex(WORDS, 7_400)).toBe(7);
+    expect(nearestWordIndex(WORDS, 7_800)).toBe(7);
+  });
+
+  it("takes the nearer edge inside a pause", () => {
+    // The gap after word 7 runs [7800, 8000]; its midpoint is 7900.
+    expect(nearestWordIndex(WORDS, 7_850)).toBe(7);
+    expect(nearestWordIndex(WORDS, 7_950)).toBe(8);
+  });
+
+  it("clamps outside the transcript rather than returning -1", () => {
+    expect(nearestWordIndex(WORDS, -5_000)).toBe(0);
+    expect(nearestWordIndex(WORDS, 10_000_000)).toBe(WORDS.length - 1);
+  });
+
+  it("reports -1 only for an empty transcript", () => {
+    expect(nearestWordIndex([], 1_000)).toBe(-1);
+  });
+});
+
+describe("trimFromTimes", () => {
+  it("snaps a typed range outward to whole words", () => {
+    // 7400 is mid-word-7, 20400 mid-word-20.
+    expect(trimFromTimes(WORDS, { startMs: 7_400, endMs: 20_400 })).toEqual({
+      startWord: 7,
+      endWord: 20,
+    });
+  });
+
+  it("grows a range too short to be legal", () => {
+    const trim = trimFromTimes(WORDS, { startMs: 50_100, endMs: 50_200 });
+    expect(isTrimLegal(WORDS, trim)).toBe(true);
+  });
+
+  it("tolerates an inverted range", () => {
+    expect(trimFromTimes(WORDS, { startMs: 40_000, endMs: 10_000 })).toEqual(
+      trimFromTimes(WORDS, { startMs: 10_000, endMs: 40_000 })
+    );
+  });
+
+  it("clamps a range that runs past the transcript", () => {
+    const trim = trimFromTimes(WORDS, { startMs: 0, endMs: 10_000_000 });
+    expect(trim).toEqual({ startWord: 0, endWord: WORDS.length - 1 });
   });
 });

@@ -16,3 +16,4 @@ data/
 *.dump
 *.sql
 !db/shaarawy.sql.xz
+.env.prod

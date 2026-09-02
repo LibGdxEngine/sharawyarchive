@@ -5,8 +5,10 @@ import { getClip } from "@/lib/api";
 import { SITE_NAME, SITE_URL, siteHost } from "@/lib/site";
 import type { Clip } from "@/types/models";
 
-// The clip render finishes asynchronously and video_url is presigned, so this
-// page is never prerendered or cached.
+// The clip render finishes asynchronously, so a page rendered while the job is
+// still queued would be wrong for good. The media addresses themselves are
+// stable (they re-sign per request), so it is the status, not the URL, that
+// keeps this page uncacheable.
 export const dynamic = "force-dynamic";
 
 interface ClipPageProps {
@@ -50,7 +52,24 @@ export async function generateMetadata({
     return fallback;
   }
 
-  if (clip.video_url === null) return fallback;
+  // `media_url` and not `video_url`: a crawler may fetch this card days after
+  // the page was rendered, and a presigned bucket URL is dead in six hours.
+  if (clip.media_url === null) return fallback;
+
+  if (clip.output === "audio") {
+    return {
+      ...fallback,
+      openGraph: {
+        type: "music.song",
+        siteName: SITE_NAME,
+        locale: "ar_AR",
+        title: TITLE,
+        description: DESCRIPTION,
+        url: `/clip/${id}`,
+        audio: [{ url: clip.media_url, type: "audio/mp4" }],
+      },
+    };
+  }
 
   return {
     ...fallback,
@@ -61,7 +80,7 @@ export async function generateMetadata({
       title: TITLE,
       description: DESCRIPTION,
       url: `/clip/${id}`,
-      videos: [{ url: clip.video_url, type: "video/mp4" }],
+      videos: [{ url: clip.media_url, type: "video/mp4" }],
     },
     twitter: {
       card: "player",
@@ -70,7 +89,7 @@ export async function generateMetadata({
       players: [
         {
           playerUrl: `${SITE_URL}/clip/${id}`,
-          streamUrl: clip.video_url,
+          streamUrl: clip.media_url,
           width: 1080,
           height: 1920,
         },
@@ -103,44 +122,36 @@ export default async function ClipPage({
     <main className="reading-column page-shell pt-8">
       <h1 className="text-2xl font-semibold leading-snug">{TITLE}</h1>
 
-      {clip.status === "done" && clip.output === "video" && clip.video_url !== null ? (
+      {clip.media_url === null ? (
+        <p className="mt-6 text-sm text-[var(--color-ink-muted)]">
+          {STATUS_TEXT[clip.status]}
+        </p>
+      ) : clip.output === "audio" ? (
+        <audio
+          controls
+          preload="metadata"
+          src={clip.media_url}
+          className="mt-6 w-full"
+        />
+      ) : (
         <video
           controls
           playsInline
           preload="metadata"
-          src={clip.video_url}
+          src={clip.media_url}
           className="mt-6 w-full border border-[var(--color-border)]"
         />
-      ) : clip.status === "done" && clip.output === "audio" && clip.audio_url !== null ? (
-        <audio
-          controls
-          preload="metadata"
-          src={clip.audio_url}
-          className="mt-6 w-full"
-        />
-      ) : (
-        <p className="mt-6 text-sm text-[var(--color-ink-muted)]">
-          {STATUS_TEXT[clip.status]}
-        </p>
       )}
 
       <div className="mt-6 flex flex-wrap items-center gap-4 text-sm">
-        {clip.video_url !== null ? (
+        {clip.download_url !== null ? (
+          // Not the bucket URL with `download` on it: that attribute is ignored
+          // cross-origin, so the old link played the clip instead of saving it.
           <a
-            href={clip.video_url}
-            download
+            href={clip.download_url}
             className="text-[var(--color-ink)] underline underline-offset-4"
           >
-            تنزيل الفيديو
-          </a>
-        ) : null}
-        {clip.audio_url !== null ? (
-          <a
-            href={clip.audio_url}
-            download
-            className="text-[var(--color-ink)] underline underline-offset-4"
-          >
-            تنزيل الصوت
+            {clip.output === "audio" ? "تنزيل الصوت" : "تنزيل الفيديو"}
           </a>
         ) : null}
         <Link

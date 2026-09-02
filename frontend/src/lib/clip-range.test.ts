@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  MAX_VIDEO_CLIP_MS,
   MIN_CLIP_MS,
   DEFAULT_CLIP_MS,
   canClipSegment,
@@ -15,6 +16,7 @@ import {
   defaultClipRange,
   moveClipEnd,
   moveClipStart,
+  spanProblem,
 } from "./clip-range";
 
 /** A 10-minute segment — long enough that neither bound is the segment edge. */
@@ -154,5 +156,22 @@ describe("defaultClipRange", () => {
       startMs: 0,
       endMs: DEFAULT_CLIP_MS,
     });
+  });
+});
+
+describe("spanProblem", () => {
+  it("accepts an ordinary video clip", () => {
+    expect(spanProblem(30_000, "video")).toBeNull();
+    expect(spanProblem(MAX_VIDEO_CLIP_MS, "video")).toBeNull();
+  });
+
+  it("refuses anything under the API's floor, whatever the output", () => {
+    expect(spanProblem(MIN_CLIP_MS - 1, "video")).toBe("too-short");
+    expect(spanProblem(MIN_CLIP_MS - 1, "audio")).toBe("too-short");
+  });
+
+  it("caps video only — an audio export may be a whole segment", () => {
+    expect(spanProblem(MAX_VIDEO_CLIP_MS + 1, "video")).toBe("too-long-for-video");
+    expect(spanProblem(84 * 60 * 1_000, "audio")).toBeNull();
   });
 });

@@ -19,7 +19,16 @@ from .models import Clip
 logger = logging.getLogger(__name__)
 
 
-@shared_task(name='clips.render_clip')
+# A render that hangs — a wedged ffmpeg, an unreachable bucket — would
+# otherwise hold a worker slot forever, and there are only two of them.
+# The soft limit raises inside the task so `rendering.render_clip` can still
+# mark the row failed; the hard limit is the backstop for a process that
+# ignores it.
+@shared_task(
+    name='clips.render_clip',
+    soft_time_limit=15 * 60,
+    time_limit=20 * 60,
+)
 def render_clip(clip_id: str) -> None:
     """Render the clip with this id, if it is still there.
 

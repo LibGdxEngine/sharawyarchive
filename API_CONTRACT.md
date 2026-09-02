@@ -60,6 +60,9 @@ Body `{ "chunk_id": 9, "word_start": 4, "word_end": 6, "suggested_text": "..." }
 Body `{ "segment_id": 17, "start_ms": 125000, "end_ms": 155000, "preset": "night", "output": "video" }`
 → 202 `{ "id": "uuid", "status": "queued" }` (400 if span <1000ms or runs past the segment)
 ## GET /api/clips/{id}/ → `{ "id": "uuid", "status": "queued|rendering|done|failed", "output": "video|audio", "video_url": "https://...|null", "audio_url": "https://...|null" }`
+(plus `media_url`, `download_url`, `download_filename` — amendment 11)
+## GET /api/clips/{id}/media/ → 302 to the clip object, played inline
+## GET /api/clips/{id}/download/ → 302 to the clip object, saved as an attachment
 
 ## Health
 `GET /healthz` → 200 `{"status":"ok"}` (liveness, no deps)
@@ -116,3 +119,33 @@ search 30/min anon; corrections 10/hour; clips 5/hour → 429 with `Retry-After`
    is AAC in an `m4a` container with the clipped machine transcript embedded
    as lyrics metadata. `GET /api/clips/{id}/` answers with both
    `video_url`/`audio_url`, exactly one non-null for a finished job.
+10. **A video clip may not exceed 5 minutes** (2026-08-28): this narrows
+    amendment 9, which removed every ceiling. `POST /api/clips/` answers 400 on
+    `end_ms - start_ms > 300000` when `output` is `video`. The reason is
+    capacity, not policy: a video card is a 1080×1920 H.264 encode with an
+    animated `showwaves` layer under burned-in subtitles, and the render queue
+    is two workers on a shared two-core host, so an 84-minute request would
+    hold both of them for hours. **Audio clips keep amendment 9's freedom** —
+    an AAC transcode is close to free — so a whole segment can still be
+    exported as `output: "audio"`.
+11. **Stable clip file addresses** (2026-08-28): `GET /api/clips/{id}/` gains
+    three fields, all `null` until `status` is `done`:
+    * `media_url` — `https://<site>/api/clips/{id}/media/`, the clip played
+      inline, whichever output the job produced;
+    * `download_url` — `https://<site>/api/clips/{id}/download/`, the same
+      bytes saved to disk;
+    * `download_filename` — the Arabic name the browser will save it under,
+      e.g. `أرشيف-الشعراوي-الفاتحة-1-7-02.05-02.35.mp4`.
+
+    Both routes answer `302` to a freshly presigned object URL with
+    `Cache-Control: private, max-age=300`, and `404` while the clip is not
+    rendered. They exist because the presigned `video_url`/`audio_url` cannot
+    do two things a shared link needs: they die in six hours (these re-sign per
+    request, so an OpenGraph card still resolves next week), and HTML ignores
+    the `download` attribute across origins (the attachment disposition is
+    *signed into* the redirect target instead). `video_url`/`audio_url` stay,
+    unchanged, for direct playback.
+
+    Both URLs name the public site (`SITE_BASE_URL`), never the caller's host —
+    the frontend renders the clip page server-side against the cluster-internal
+    API address, which must not reach a browser.

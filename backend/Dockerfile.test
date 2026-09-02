@@ -1,0 +1,4 @@
+FROM shaarawy-backend-test
+USER root
+COPY requirements-dev.txt /app/
+RUN pip install --no-cache-dir -r /app/requirements-dev.txt

@@ -13,6 +13,8 @@ Entry points
 ------------
 ``python -m pipeline.run --folder F --source-title T --kind khawatir``
     Synchronous in-process driver: the one command that ingests a folder.
+``python -m pipeline.run_storage [--surah N] [--limit N]``
+    Transcribe audio already in object storage (imported, never processed).
 ``python -m pipeline.parsers --dry-run FOLDER``
     Filename parser preview; writes nothing, needs no database.
 ``celery -A pipeline.celery_app worker -Q pipeline``

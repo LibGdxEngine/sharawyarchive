@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.db.models import QuerySet
-from drf_spectacular.utils import extend_schema
+from django.http import Http404, HttpResponseRedirect
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.request import Request
@@ -12,7 +14,10 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from corpus.storage import clip_key, presigned_url
+
 from .models import Clip, ClipStatus
+from .naming import download_filename
 from .serializers import ClipCreateSerializer, ClipDetailSerializer, ClipStatusSerializer
 from .tasks import render_clip
 
@@ -80,4 +85,51 @@ class ClipDetailView(RetrieveAPIView):
     serializer_class = ClipDetailSerializer
 
     def get_queryset(self) -> QuerySet[Clip]:
-        return Clip.objects.all()
+        # The download filename reads the segment, and the client polls this
+        # endpoint every three seconds — do not pay for a second query each time.
+        return Clip.objects.select_related('segment')
+
+
+class ClipFileView(APIView):
+    """``GET /api/clips/{id}/media/`` and ``.../download/`` — the clip bytes.
+
+    Both redirect to a freshly presigned object URL rather than answering with
+    one, which buys two things a presigned URL in a JSON body cannot:
+
+    * **The link never rots.** A presigned URL dies in six hours, and these
+      addresses are the ones that get shared, embedded in OpenGraph metadata and
+      pasted into chats.
+    * **The download actually downloads.** The bucket is a different origin from
+      the site, and HTML ignores ``download`` on a cross-origin anchor. The
+      attachment disposition is signed into the redirect target instead, so the
+      browser saves the file whatever the anchor says.
+
+    ``as_attachment`` is what separates the two routes: the clip page plays the
+    same object inline, and an attachment disposition would fight that.
+    """
+
+    as_attachment = False
+
+    @extend_schema(
+        # Nothing to infer a serializer from: the body is a redirect, not JSON.
+        responses={
+            (302, None): OpenApiResponse(description='redirect to the clip object'),
+            404: OpenApiResponse(description='no such clip, or not rendered yet'),
+        },
+    )
+    def get(self, request: Request, pk: str) -> HttpResponseRedirect:
+        clip = get_object_or_404(Clip.objects.select_related('segment'), pk=pk)
+        if clip.status != ClipStatus.DONE:
+            raise Http404('clip is not rendered')
+
+        key = clip.storage_key or clip_key(
+            clip.segment_id, clip.start_ms, clip.end_ms, clip.preset, clip.output
+        )
+        url = presigned_url(
+            key,
+            download_as=download_filename(clip) if self.as_attachment else None,
+        )
+        response = HttpResponseRedirect(url)
+        # Never cache the redirect for longer than the URL it points at.
+        response['Cache-Control'] = 'private, max-age=300'
+        return response

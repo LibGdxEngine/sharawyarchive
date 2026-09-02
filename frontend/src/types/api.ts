@@ -70,6 +70,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clips/{id}/download/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ``GET /api/clips/{id}/media/`` and ``.../download/`` — the clip bytes.
+         *
+         *     Both redirect to a freshly presigned object URL rather than answering with
+         *     one, which buys two things a presigned URL in a JSON body cannot:
+         *
+         *     * **The link never rots.** A presigned URL dies in six hours, and these
+         *       addresses are the ones that get shared, embedded in OpenGraph metadata and
+         *       pasted into chats.
+         *     * **The download actually downloads.** The bucket is a different origin from
+         *       the site, and HTML ignores ``download`` on a cross-origin anchor. The
+         *       attachment disposition is signed into the redirect target instead, so the
+         *       browser saves the file whatever the anchor says.
+         *
+         *     ``as_attachment`` is what separates the two routes: the clip page plays the
+         *     same object inline, and an attachment disposition would fight that.
+         */
+        get: operations["clips_download_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{id}/media/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ``GET /api/clips/{id}/media/`` and ``.../download/`` — the clip bytes.
+         *
+         *     Both redirect to a freshly presigned object URL rather than answering with
+         *     one, which buys two things a presigned URL in a JSON body cannot:
+         *
+         *     * **The link never rots.** A presigned URL dies in six hours, and these
+         *       addresses are the ones that get shared, embedded in OpenGraph metadata and
+         *       pasted into chats.
+         *     * **The download actually downloads.** The bucket is a different origin from
+         *       the site, and HTML ignores ``download`` on a cross-origin anchor. The
+         *       attachment disposition is signed into the redirect target instead, so the
+         *       browser saves the file whatever the anchor says.
+         *
+         *     ``as_attachment`` is what separates the two routes: the clip page plays the
+         *     same object inline, and an attachment disposition would fight that.
+         */
+        get: operations["clips_media_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corrections/": {
         parameters: {
             query?: never;
@@ -122,10 +188,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description ``GET /api/search/suggest/?q=`` — autocomplete suggestions.
+         * @description ``GET /api/search/suggest/?q=&kind=`` — autocomplete suggestions.
          *
-         *     Returns a plain list of strings (matched chunk text snippets).
-         *     Never cached; results move with every pipeline run.
+         *     ``kind`` scopes suggestions to the selected content (recitation → mushaf
+         *     text, khawatir → khawatir transcript snippets). Returns a plain list of
+         *     strings (matched text snippets). Never cached; results move with every
+         *     pipeline run.
          */
         get: operations["search_suggest"];
         put?: never;
@@ -381,7 +449,8 @@ export interface components {
         };
         /**
          * @description ``GET /api/clips/{id}/``. Exactly one of ``video_url``/``audio_url``
-         * appears once the render finishes; a queued or failed job has neither.
+         *     appears once the render finishes (which one is set by the job's ``output``);
+         *     a queued or failed job has neither.
          */
         ClipDetail: {
             /** Format: uuid */
@@ -392,7 +461,18 @@ export interface components {
             readonly video_url: string | null;
             /** Format: uri */
             readonly audio_url: string | null;
+            /** Format: uri */
+            readonly media_url: string | null;
+            /** Format: uri */
+            readonly download_url: string | null;
+            readonly download_filename: string | null;
         };
+        /**
+         * @description * `video` - Video
+         *     * `audio` - Audio
+         * @enum {string}
+         */
+        ClipOutputEnum: "video" | "audio";
         /** @description The body of both clip POST outcomes: created, or already queued. */
         ClipStatus: {
             /** Format: uuid */
@@ -407,12 +487,6 @@ export interface components {
          * @enum {string}
          */
         ClipStatusEnum: "queued" | "rendering" | "done" | "failed";
-        /**
-         * @description * `video` - Video
-         *     * `audio` - Audio
-         * @enum {string}
-         */
-        ClipOutputEnum: "video" | "audio";
         /**
          * @description ``POST /api/corrections/``. Word offsets index ``TranscriptWord.idx``;
          *     a one-word fix has ``word_start == word_end``.
@@ -680,6 +754,60 @@ export interface operations {
             };
         };
     };
+    clips_download_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description redirect to the clip object */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description no such clip, or not rendered yet */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clips_media_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description redirect to the clip object */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description no such clip, or not rendered yet */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     correction_create: {
         parameters: {
             query?: never;
@@ -740,6 +868,7 @@ export interface operations {
     search_suggest: {
         parameters: {
             query: {
+                kind?: string;
                 q: string;
             };
             header?: never;

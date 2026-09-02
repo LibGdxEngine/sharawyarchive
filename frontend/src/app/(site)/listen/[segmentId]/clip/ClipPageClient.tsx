@@ -68,7 +68,9 @@ export default function ClipPageClient({ segmentId }: ClipPageClientProps) {
           الآلي.
         </p>
       ) : (
-        <ClipComposer segment={segment} />
+        // The transcript was already fetched above and thrown away; the
+        // composer trims by words, so it needs it.
+        <ClipComposer segment={segment} words={transcript.words} />
       )}
     </div>
   );

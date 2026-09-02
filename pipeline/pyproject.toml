@@ -24,6 +24,7 @@ select = ["E", "F", "I", "UP", "B"]
 # the file. Test modules are fine: conftest has already run by the time they
 # are imported.
 "stages.py" = ["E402"]
+"run_storage.py" = ["E402"]
 "tests/conftest.py" = ["E402"]
 
 [tool.mypy]

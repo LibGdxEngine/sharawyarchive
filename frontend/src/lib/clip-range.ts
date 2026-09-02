@@ -2,13 +2,41 @@
  * Clip range arithmetic — pure, no DOM, no React.
  *
  * The API rejects a clip shorter than one second (API_CONTRACT.md, amendment
- * 9); beyond that a clip may run all the way to the end of its segment. The
- * composer never lets the handles reach an invalid range in the first place:
- * every drag is funnelled through these functions and comes back already
- * legal. All values are integer milliseconds (CLAUDE.md rule 5).
+ * 9) and a *video* longer than five minutes (amendment 10); an audio export
+ * may still run to the end of its segment. The composer never lets the handles
+ * reach an invalid range in the first place: every drag is funnelled through
+ * these functions and comes back already legal. All values are integer
+ * milliseconds (CLAUDE.md rule 5).
  */
 
+import type { ClipOutput } from "@/types/models";
+
 export const MIN_CLIP_MS = 1_000;
+
+/**
+ * Ceiling on a video clip, mirroring `clips.models.MAX_VIDEO_SPAN_MS`.
+ *
+ * Capacity, not policy: a video card is a 1080x1920 H.264 encode with an
+ * animated waveform under burned-in subtitles, rendered by two celery workers
+ * on a shared two-core host. Audio is a straight AAC transcode and has no
+ * ceiling, which is why this is not simply a maximum on `ClipRange`.
+ */
+export const MAX_VIDEO_CLIP_MS = 5 * 60 * 1_000;
+
+/** Why the API would refuse a span, or null when it would accept it. */
+export type SpanProblem = "too-short" | "too-long-for-video";
+
+/** The 400 this span would earn, decided before anyone spends a render. */
+export function spanProblem(
+  spanMs: number,
+  output: ClipOutput
+): SpanProblem | null {
+  if (spanMs < MIN_CLIP_MS) return "too-short";
+  if (output === "video" && spanMs > MAX_VIDEO_CLIP_MS) {
+    return "too-long-for-video";
+  }
+  return null;
+}
 
 /** Span a freshly opened composer proposes around the playhead. */
 export const DEFAULT_CLIP_MS = 30_000;

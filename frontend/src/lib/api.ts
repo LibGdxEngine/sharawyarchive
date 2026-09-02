@@ -31,12 +31,27 @@ const BASE_URL = (
  */
 export class ApiError extends Error {
   readonly status: number;
+  /**
+   * Seconds until the request is worth repeating, from `Retry-After`. Only DRF
+   * throttles set it (429), and only same-origin callers can read it — which is
+   * every browser caller here, since Caddy serves `/api/*` on the site origin.
+   */
+  readonly retryAfter: number | null;
 
-  constructor(status: number, path: string) {
+  constructor(status: number, path: string, retryAfter: number | null = null) {
     super(`API ${status}: ${path}`);
     this.name = "ApiError";
     this.status = status;
+    this.retryAfter = retryAfter;
   }
+}
+
+/** `Retry-After` as whole seconds, or null when absent or an HTTP-date. */
+function parseRetryAfter(res: Response): number | null {
+  const raw = res.headers.get("Retry-After");
+  if (raw === null) return null;
+  const seconds = Number.parseInt(raw, 10);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -49,7 +64,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    throw new ApiError(res.status, path);
+    throw new ApiError(res.status, path, parseRetryAfter(res));
   }
   return res.json() as Promise<T>;
 }
@@ -92,12 +107,28 @@ export function getSegmentChunks(id: number): Promise<SegmentChunk[]> {
   return apiFetch<SegmentChunk[]>(`/segments/${id}/chunks/`);
 }
 
-export function getTranscript(id: number, version?: number): Promise<Transcript> {
+/**
+ * A transcript, addressed by `?v=` so a corrected one arrives under a new URL.
+ *
+ * `store: false` opts the request out of Next's fetch cache, for the server
+ * render of /listen: the payload is tens of kilobytes per segment across four
+ * thousand segments, and the backend is a same-cluster hop away, so caching it
+ * on the server trades a lot of disk for very little latency. In the browser
+ * the default path is the one that matters — the HTTP cache and the service
+ * worker both key off the versioned URL.
+ */
+export function getTranscript(
+  id: number,
+  version?: number,
+  { store = true }: { store?: boolean } = {}
+): Promise<Transcript> {
   const qs = version !== undefined ? `?v=${version}` : "";
-  return apiFetch<Transcript>(`/segments/${id}/transcript/${qs}`, {
-    next: { revalidate: false },
-    cache: "force-cache",
-  } as RequestInit);
+  return apiFetch<Transcript>(
+    `/segments/${id}/transcript/${qs}`,
+    (store
+      ? { next: { revalidate: false }, cache: "force-cache" }
+      : { cache: "no-store" }) as RequestInit
+  );
 }
 
 // ---------------------------------------------------------------------------

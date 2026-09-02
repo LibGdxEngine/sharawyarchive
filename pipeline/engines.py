@@ -507,7 +507,21 @@ class CTCAligner:
         )
         alignment = Alignment(model_path)
         waveform = load_audio(audio_path)
-        emissions, stride = generate_emissions(alignment.model, waveform)
+        # Emission memory is dominated by the ONNX forward pass, whose peak is
+        # set by how much audio runs through the model at once — O(batch ×
+        # window²) for the transformer's self-attention — and is independent of
+        # the file's total duration (the library already tiles the waveform into
+        # fixed windows). Default to a single short window so even multi-hour
+        # episodes align within a couple of GB on a CPU-only host; a GPU/large-
+        # RAM worker can raise both via env for throughput.
+        emission_batch = int(os.environ.get("ALIGNER_EMISSION_BATCH", "1"))
+        emission_window_s = int(os.environ.get("ALIGNER_EMISSION_WINDOW_S", "30"))
+        emissions, stride = generate_emissions(
+            alignment.model,
+            waveform,
+            window_length=emission_window_s,
+            batch_size=emission_batch,
+        )
         del waveform
 
         word_list = text.split()

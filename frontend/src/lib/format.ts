@@ -32,3 +32,32 @@ export function toArabicIndic(value: number | string): string {
 export function kindLabel(kind: "recitation" | "khawatir"): string {
   return kind === "recitation" ? "تلاوة" : "خواطر";
 }
+
+/**
+ * Inverse of {@link formatMs} for the composer's editable time fields.
+ *
+ * Accepts `ss`, `mm:ss` and `h:mm:ss`, with or without padding, and tolerates
+ * Arabic-Indic digits and the Arabic decimal separator a phone keyboard may
+ * produce. Returns null for anything it cannot read, so the caller can leave
+ * the reader's half-typed text alone instead of snapping it to zero.
+ */
+export function parseMs(text: string): number | null {
+  const ascii = text
+    .trim()
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[٫٬.,]/g, ":");
+  if (ascii === "" || !/^\d{1,3}(:\d{1,2}){0,2}$/.test(ascii)) return null;
+
+  const parts = ascii.split(":").map(Number);
+  const [hours, minutes, seconds] =
+    parts.length === 3
+      ? parts
+      : parts.length === 2
+        ? [0, parts[0], parts[1]]
+        : [0, 0, parts[0]];
+  // Only the leading field may exceed its base: "90:00" is a legitimate way to
+  // say an hour and a half into an 84-minute segment.
+  if (parts.length > 1 && seconds > 59) return null;
+  if (parts.length > 2 && minutes > 59) return null;
+  return (hours * 3600 + minutes * 60 + seconds) * 1000;
+}

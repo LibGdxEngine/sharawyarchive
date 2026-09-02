@@ -107,6 +107,80 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClipDetail'
           description: ''
+  /api/clips/{id}/download/:
+    get:
+      operationId: clips_download_retrieve
+      description: |-
+        ``GET /api/clips/{id}/media/`` and ``.../download/`` — the clip bytes.
+
+        Both redirect to a freshly presigned object URL rather than answering with
+        one, which buys two things a presigned URL in a JSON body cannot:
+
+        * **The link never rots.** A presigned URL dies in six hours, and these
+          addresses are the ones that get shared, embedded in OpenGraph metadata and
+          pasted into chats.
+        * **The download actually downloads.** The bucket is a different origin from
+          the site, and HTML ignores ``download`` on a cross-origin anchor. The
+          attachment disposition is signed into the redirect target instead, so the
+          browser saves the file whatever the anchor says.
+
+        ``as_attachment`` is what separates the two routes: the clip page plays the
+        same object inline, and an attachment disposition would fight that.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - clips
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '302':
+          description: redirect to the clip object
+        '404':
+          description: no such clip, or not rendered yet
+  /api/clips/{id}/media/:
+    get:
+      operationId: clips_media_retrieve
+      description: |-
+        ``GET /api/clips/{id}/media/`` and ``.../download/`` — the clip bytes.
+
+        Both redirect to a freshly presigned object URL rather than answering with
+        one, which buys two things a presigned URL in a JSON body cannot:
+
+        * **The link never rots.** A presigned URL dies in six hours, and these
+          addresses are the ones that get shared, embedded in OpenGraph metadata and
+          pasted into chats.
+        * **The download actually downloads.** The bucket is a different origin from
+          the site, and HTML ignores ``download`` on a cross-origin anchor. The
+          attachment disposition is signed into the redirect target instead, so the
+          browser saves the file whatever the anchor says.
+
+        ``as_attachment`` is what separates the two routes: the clip page plays the
+        same object inline, and an attachment disposition would fight that.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - clips
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '302':
+          description: redirect to the clip object
+        '404':
+          description: no such clip, or not rendered yet
   /api/corrections/:
     post:
       operationId: correction_create
@@ -189,11 +263,17 @@ paths:
     get:
       operationId: search_suggest
       description: |-
-        ``GET /api/search/suggest/?q=`` — autocomplete suggestions.
+        ``GET /api/search/suggest/?q=&kind=`` — autocomplete suggestions.
 
-        Returns a plain list of strings (matched chunk text snippets).
-        Never cached; results move with every pipeline run.
+        ``kind`` scopes suggestions to the selected content (recitation → mushaf
+        text, khawatir → khawatir transcript snippets). Returns a plain list of
+        strings (matched text snippets). Never cached; results move with every
+        pipeline run.
       parameters:
+      - in: query
+        name: kind
+        schema:
+          type: string
       - in: query
         name: q
         schema:
@@ -596,6 +676,8 @@ components:
           format: int64
         preset:
           $ref: '#/components/schemas/PresetEnum'
+        output:
+          $ref: '#/components/schemas/ClipOutputEnum'
       required:
       - end_ms
       - preset
@@ -604,8 +686,9 @@ components:
     ClipDetail:
       type: object
       description: |-
-        ``GET /api/clips/{id}/``. ``video_url`` appears only once the render
-        finished — a queued or failed job has nothing to hand out.
+        ``GET /api/clips/{id}/``. Exactly one of ``video_url``/``audio_url``
+        appears once the render finishes (which one is set by the job's ``output``);
+        a queued or failed job has neither.
       properties:
         id:
           type: string
@@ -613,14 +696,47 @@ components:
           readOnly: true
         status:
           $ref: '#/components/schemas/ClipStatusEnum'
+        output:
+          $ref: '#/components/schemas/ClipOutputEnum'
         video_url:
           type: string
           format: uri
           nullable: true
           readOnly: true
+        audio_url:
+          type: string
+          format: uri
+          nullable: true
+          readOnly: true
+        media_url:
+          type: string
+          format: uri
+          nullable: true
+          readOnly: true
+        download_url:
+          type: string
+          format: uri
+          nullable: true
+          readOnly: true
+        download_filename:
+          type: string
+          nullable: true
+          readOnly: true
       required:
+      - audio_url
+      - download_filename
+      - download_url
       - id
+      - media_url
       - video_url
+    ClipOutputEnum:
+      enum:
+      - video
+      - audio
+      type: string
+      description: |-
+        * `video` - Video
+        * `audio` - Audio
     ClipStatus:
       type: object
       description: 'The body of both clip POST outcomes: created, or already queued.'

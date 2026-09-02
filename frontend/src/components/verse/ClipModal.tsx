@@ -1,35 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { MIN_CLIP_MS } from "@/lib/clip-range";
+import { useEffect, useRef, useState } from "react";
+import { MAX_VIDEO_CLIP_MS, MIN_CLIP_MS, spanProblem } from "@/lib/clip-range";
 import type { WordRange } from "@/lib/correction-selection";
 import { formatMs } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
-import {
-  isTrimLegal,
-  moveTrimEnd,
-  moveTrimStart,
-  trimFromRange,
-  trimTimesMs,
-} from "@/lib/word-trim";
+import { trimFromRange, trimTimesMs } from "@/lib/word-trim";
 import type { WordTrim } from "@/lib/word-trim";
 import { useActiveWordIndex } from "@/components/player/useActiveWord";
 import { useClipRender } from "@/components/player/useClipRender";
-import { useRangePlayback } from "./useRangePlayback";
-import ClipPreview, { CLIP_THEMES, CLIP_THEME_PRESET } from "./ClipPreview";
-import type { ClipTheme } from "./ClipPreview";
-import type { ClipStatus, Segment, TranscriptWord } from "@/types/models";
+import { statusLine } from "@/components/clip/clip-status";
+import ClipOutputPicker from "@/components/clip/ClipOutputPicker";
+import ClipPresetPicker from "@/components/clip/ClipPresetPicker";
+import TrimHandle from "@/components/clip/TrimHandle";
+import { useTrimHandles } from "@/components/clip/useTrimHandles";
+import { useRangePlayback } from "@/components/clip/useRangePlayback";
+import ClipPreview, { CLIP_THEME_PRESET } from "@/components/clip/ClipPreview";
+import type { ClipTheme } from "@/components/clip/ClipPreview";
+import { CLIP_THEMES } from "@/components/clip/ClipPreview";
+import type { ClipOutput, Segment, TranscriptWord } from "@/types/models";
 
 /** Words shown around the trim for context, each side. */
 const CONTEXT_WORDS = 8;
-
-const STATUS_LABEL: Record<ClipStatus, string> = {
-  queued: "في قائمة الانتظار…",
-  rendering: "جارٍ إنشاء المقطع…",
-  done: "المقطع جاهز",
-  failed: "تعذّر إنشاء المقطع",
-};
 
 interface ClipModalProps {
   segment: Segment;
@@ -57,6 +50,7 @@ export default function ClipModal({
     trimFromRange(words, initialRange)
   );
   const [theme, setTheme] = useState<ClipTheme>(CLIP_THEMES[0]);
+  const [output, setOutput] = useState<ClipOutput>("video");
   const [shareNote, setShareNote] = useState("");
   const render = useClipRender();
   const { activeRange, playRange, stop } = useRangePlayback(segment.id);
@@ -64,7 +58,11 @@ export default function ClipModal({
 
   const { startMs, endMs } = trimTimesMs(words, trim);
   const spanMs = endMs - startMs;
-  const legal = isTrimLegal(words, trim);
+  const problem = spanProblem(spanMs, output);
+  // A render that failed, or one polling stopped watching, is the only state
+  // where pressing the button again does anything: the API re-queues a failed
+  // row rather than handing back the wreck for ever.
+  const retryable = render.clip !== null && !render.busy;
 
   // ---- dialog plumbing: Escape, focus trap, initial focus ------------------
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -103,60 +101,9 @@ export default function ClipModal({
   }, [onClose]);
 
   // ---- word-snapped handle dragging ----------------------------------------
-  // State rather than a ref: the handlers below are created during render,
-  // and mutating a ref there is what the compiler rules forbid.
-  const [dragging, setDragging] = useState<"start" | "end" | null>(null);
-
-  const wordIndexAt = (clientX: number, clientY: number): number | null => {
-    const element = document.elementFromPoint(clientX, clientY);
-    const wordEl = element?.closest<HTMLElement>("[data-trim-index]");
-    if (!wordEl) return null;
-    const index = Number.parseInt(wordEl.dataset.trimIndex ?? "", 10);
-    return Number.isInteger(index) ? index : null;
-  };
-
-  const moveHandle = useCallback(
-    (handle: "start" | "end", targetWord: number) => {
-      setTrim((previous) =>
-        handle === "start"
-          ? moveTrimStart(words, previous, targetWord)
-          : moveTrimEnd(words, previous, targetWord)
-      );
-    },
-    [words]
-  );
-
-  const handleProps = (handle: "start" | "end") => {
-    const at = handle === "start" ? trim.startWord : trim.endWord;
-    return {
-      onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
-        event.preventDefault();
-        setDragging(handle);
-        event.currentTarget.setPointerCapture(event.pointerId);
-      },
-      onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (dragging !== handle) return;
-        const index = wordIndexAt(event.clientX, event.clientY);
-        if (index !== null) moveHandle(handle, index);
-      },
-      onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
-        setDragging(null);
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-      },
-      onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
-        // RTL text: visually-right (ArrowRight) is one word EARLIER.
-        if (event.key === "ArrowRight") {
-          event.preventDefault();
-          moveHandle(handle, at - 1);
-        } else if (event.key === "ArrowLeft") {
-          event.preventDefault();
-          moveHandle(handle, at + 1);
-        }
-      },
-    };
-  };
+  // Shared with the listen page's composer, which is what makes the two UIs
+  // agree that ArrowRight moves one word EARLIER in this RTL text.
+  const { dragging, handleProps } = useTrimHandles(words, setTrim);
 
   // ---- render + share -------------------------------------------------------
   const clipUrl =
@@ -182,21 +129,15 @@ export default function ClipModal({
   for (let index = contextStart; index <= contextEnd; index += 1) {
     if (index === trim.startWord) {
       strip.push(
-        <button
+        <TrimHandle
           key="handle-start"
-          type="button"
-          role="slider"
-          dir="ltr"
-          aria-label="بداية المقطع"
-          aria-valuemin={0}
-          aria-valuemax={words.length - 1}
-          aria-valuenow={trim.startWord}
-          aria-valuetext={`${words[trim.startWord].t} · ${formatMs(startMs)}`}
-          className="mx-1 inline-block cursor-ew-resize touch-none rounded-md bg-[var(--verse-gold)] px-1.5 py-0.5 text-[15px] font-extrabold text-[var(--verse-gold-ink)]"
-          {...handleProps("start")}
-        >
-          ]
-        </button>
+          handle="start"
+          words={words}
+          at={trim.startWord}
+          opposite={trim.endWord}
+          dragging={dragging === "start"}
+          pointer={handleProps("start", trim.startWord)}
+        />
       );
     }
     const inTrim = index >= trim.startWord && index <= trim.endWord;
@@ -216,21 +157,15 @@ export default function ClipModal({
     );
     if (index === trim.endWord) {
       strip.push(
-        <button
+        <TrimHandle
           key="handle-end"
-          type="button"
-          role="slider"
-          dir="ltr"
-          aria-label="نهاية المقطع"
-          aria-valuemin={0}
-          aria-valuemax={words.length - 1}
-          aria-valuenow={trim.endWord}
-          aria-valuetext={`${words[trim.endWord].t} · ${formatMs(endMs)}`}
-          className="mx-1 inline-block cursor-ew-resize touch-none rounded-md bg-[var(--verse-gold)] px-1.5 py-0.5 text-[15px] font-extrabold text-[var(--verse-gold-ink)]"
-          {...handleProps("end")}
-        >
-          [
-        </button>
+          handle="end"
+          words={words}
+          at={trim.endWord}
+          opposite={trim.startWord}
+          dragging={dragging === "end"}
+          pointer={handleProps("end", trim.endWord)}
+        />
       );
     }
   }
@@ -268,13 +203,16 @@ export default function ClipModal({
 
         <div className="mt-5 flex flex-wrap gap-6">
           <div className="mx-auto shrink-0">
-            <ClipPreview
-              words={words}
-              trim={trim}
-              theme={theme}
-              isQuranWord={isQuranWord}
-              activeWordIndex={activeWordIndex}
-            />
+            {/* An audio export has no card to preview — only the span. */}
+            {output === "video" ? (
+              <ClipPreview
+                words={words}
+                trim={trim}
+                theme={theme}
+                isQuranWord={isQuranWord}
+                activeWordIndex={activeWordIndex}
+              />
+            ) : null}
             <button
               type="button"
               onClick={() =>
@@ -288,7 +226,7 @@ export default function ClipModal({
 
           <div className="min-w-[280px] flex-1">
             <p className="text-sm font-semibold text-[var(--color-ink-muted)]">
-              اضبط الحدود بسحب القوسين — القصّ يتبع الكلمات، لا الموجة الصوتية
+              اضبط الحدود بسحب المقبضين — القصّ يتبع الكلمات، لا الموجة الصوتية
             </p>
             <p className="mt-3 select-none rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4 text-base leading-[2.3]">
               {strip}
@@ -297,55 +235,39 @@ export default function ClipModal({
               <span dir="ltr" className="tabular-nums">
                 {formatMs(startMs)} – {formatMs(endMs)}
               </span>{" "}
-              · الحد الأدنى {MIN_CLIP_MS / 1000} ثانية وحتى نهاية المقطع
+              · الحد الأدنى {MIN_CLIP_MS / 1000} ثانية
+              {output === "video"
+                ? ` وأقصى مدة للفيديو ${MAX_VIDEO_CLIP_MS / 60_000} دقائق`
+                : " وحتى نهاية المقطع"}
             </p>
-            {!legal ? (
+            {problem !== null ? (
               <p role="status" className="mt-1 text-xs text-[var(--verse-deep)]">
-                المدة خارج الحدود المسموحة — حرّك القوسين لتقصير المقطع أو
-                إطالته.
+                {problem === "too-short"
+                  ? "المقطع أقصر من الحد الأدنى — حرّك المقبضين لإطالته."
+                  : "المقطع أطول مما يُنشأ فيديو — قصّره، أو اختر «صوت فقط»."}
               </p>
             ) : null}
 
-            <fieldset className="mt-5">
-              <legend className="text-sm font-semibold text-[var(--color-ink-muted)]">
-                النمط
-              </legend>
-              <div className="mt-2.5 flex flex-wrap gap-3">
-                {CLIP_THEMES.map((option) => {
-                  const selected = option.id === theme.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setTheme(option)}
-                      aria-pressed={selected}
-                      className="flex items-center gap-2 rounded-[10px] border-[1.5px] px-3.5 py-2 text-[13px]"
-                      style={{
-                        borderColor: selected
-                          ? "var(--verse-gold)"
-                          : "var(--color-border)",
-                      }}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-xs [font-family:var(--font-amiri)]"
-                        style={{
-                          background: option.swatchBg,
-                          color: option.swatchInk,
-                        }}
-                      >
-                        ش
-                      </span>
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="mt-5 flex flex-wrap gap-6">
+              <ClipOutputPicker
+                output={output}
+                setOutput={setOutput}
+                accent="var(--verse-gold)"
+              />
+              {output === "video" ? (
+                <ClipPresetPicker
+                  theme={theme}
+                  setTheme={setTheme}
+                  accent="var(--verse-gold)"
+                />
+              ) : null}
+            </div>
+            {output === "video" ? (
               <p className="mt-2 text-xs text-[var(--color-ink-faint)]">
                 تُعرض كلمات الآيات دائمًا بالخطّ القرآني وبلونٍ مميّز، مهما كان
                 النمط. يُنشأ الفيديو بأقرب شكلٍ معتمد في الأرشيف لهذا النمط.
               </p>
-            </fieldset>
+            ) : null}
 
             <div className="mt-6 flex flex-wrap items-center gap-2.5">
               <button
@@ -356,18 +278,23 @@ export default function ClipModal({
                     start_ms: startMs,
                     end_ms: endMs,
                     preset: CLIP_THEME_PRESET[theme.id],
+                    output,
                   })
                 }
-                disabled={!legal || render.creating || render.submitted}
+                disabled={problem !== null || render.busy}
                 className="rounded-lg bg-[var(--verse-gold)] px-6 py-2.5 text-sm font-bold text-[var(--verse-gold-ink)] hover:bg-[var(--verse-gold-hover)] disabled:opacity-50"
               >
-                {render.creating ? "جارٍ الإرسال…" : "إنشاء الفيديو"}
+                {render.creating
+                  ? "جارٍ الإرسال…"
+                  : retryable
+                    ? "أعد المحاولة"
+                    : output === "audio"
+                      ? "إنشاء الصوت"
+                      : "إنشاء الفيديو"}
               </button>
               {render.clip !== null ? (
                 <span role="status" className="text-xs text-[var(--color-ink-muted)]">
-                  {render.timedOut && render.clip.status !== "done"
-                    ? "ما زال الإنشاء جاريًا — افتح صفحة المقطع بعد قليل."
-                    : STATUS_LABEL[render.clip.status]}
+                  {statusLine(render.clip.status, render.timedOut)}
                 </span>
               ) : null}
               {render.message !== "" ? (
@@ -381,13 +308,16 @@ export default function ClipModal({
             (render.clip.status === "done" || render.timedOut) &&
             clipUrl !== null ? (
               <div className="mt-4 flex flex-wrap items-center gap-2.5 text-sm">
-                {render.clip.video_url !== null ? (
+                {render.clip.download_url !== null ? (
+                  // Same-origin: `download` on a bucket URL is a no-op, so the
+                  // attachment disposition is signed into the redirect instead.
                   <a
-                    href={render.clip.video_url}
-                    download
+                    href={render.clip.download_url}
                     className="rounded-lg bg-[var(--verse-gold)] px-5 py-2.5 font-bold text-[var(--verse-gold-ink)] hover:bg-[var(--verse-gold-hover)]"
                   >
-                    تنزيل الفيديو MP4
+                    {render.clip.output === "audio"
+                      ? "تنزيل الصوت M4A"
+                      : "تنزيل الفيديو MP4"}
                   </a>
                 ) : null}
                 <a

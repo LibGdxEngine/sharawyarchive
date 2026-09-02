@@ -16,8 +16,16 @@ from django.db import models
 
 MIN_SPAN_MS = 1_000
 """Shortest clip the API accepts: one full second, so a render is never a
-degenerate empty file. There is no upper bound — a clip may run to the end of
-its segment (``API_CONTRACT.md`` amendment 9)."""
+degenerate empty file."""
+
+MAX_VIDEO_SPAN_MS = 5 * 60 * 1_000
+"""Ceiling on a *video* clip — a capacity limit, not an editorial one.
+
+A card is a 1080x1920 H.264 encode with an animated waveform under burned-in
+subtitles; on the two-core worker that also serves the site, an hour-long
+segment rendered whole would occupy both cores for hours. Audio-only clips are
+a straight AAC transcode and stay uncapped, so they may still run to the end of
+the segment as ``API_CONTRACT.md`` amendment 9 allows."""
 
 
 class ClipPreset(models.TextChoices):

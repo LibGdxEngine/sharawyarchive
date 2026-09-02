@@ -121,3 +121,68 @@ export function isTrimLegal(
 ): boolean {
   return spanMs(words, trim.startWord, trim.endWord) >= MIN_CLIP_MS;
 }
+
+// ---------------------------------------------------------------------------
+// Entering a trim by time rather than by pointing at words
+// ---------------------------------------------------------------------------
+//
+// The composer lets a reader type `mm:ss`, capture the live playhead, or drag
+// the overview strip. All three arrive as milliseconds and have to become word
+// positions, because the trim is words: what gets clipped is what was said.
+
+/**
+ * Index of the word closest to `tMs`.
+ *
+ * Inside a word's own span that word wins; in the silence between two words the
+ * nearer edge wins, so capturing the playhead during a pause snaps to whichever
+ * word the listener just heard or is about to hear rather than always looking
+ * backwards. Returns -1 only for an empty transcript.
+ *
+ * `words` must be sorted ascending by `s`; the search is binary, because this
+ * runs on every frame of an overview-strip drag over ~9000 words.
+ */
+export function nearestWordIndex(
+  words: readonly TranscriptWord[],
+  tMs: number
+): number {
+  if (words.length === 0) return -1;
+
+  // Last word starting at or before tMs — the same rule as findActiveWordIndex.
+  let lo = 0;
+  let hi = words.length - 1;
+  let at = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (words[mid].s <= tMs) {
+      at = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  if (at < 0) return 0; // before the first word
+  if (tMs <= words[at].e) return at; // inside it
+  if (at === words.length - 1) return at; // after the last word
+  // In a gap: whichever edge is nearer, ties going forward.
+  return tMs - words[at].e < words[at + 1].s - tMs ? at : at + 1;
+}
+
+/**
+ * The word trim covering a time range.
+ *
+ * The ends are pulled *outward* to whole words — a clip that starts mid-word
+ * would cut the Sheikh off mid-syllable — and then handed to
+ * {@link trimFromRange}, so the result already satisfies the API's minimum.
+ */
+export function trimFromTimes(
+  words: readonly TranscriptWord[],
+  range: ClipRange
+): WordTrim {
+  const start = nearestWordIndex(words, range.startMs);
+  const end = nearestWordIndex(words, range.endMs);
+  return trimFromRange(words, {
+    start: Math.min(start, end),
+    end: Math.max(start, end),
+  });
+}

@@ -1,85 +1,66 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, createClip, getClip } from "@/lib/api";
-import { useAudioStore } from "@/lib/audio-store";
+import { useEffect, useMemo, useState } from "react";
+import ClipOutputPicker from "@/components/clip/ClipOutputPicker";
+import ClipOverviewStrip from "@/components/clip/ClipOverviewStrip";
+import ClipPresetPicker from "@/components/clip/ClipPresetPicker";
+import ClipPreview, {
+  CLIP_THEMES,
+  CLIP_THEME_PRESET,
+} from "@/components/clip/ClipPreview";
+import type { ClipTheme } from "@/components/clip/ClipPreview";
+import ClipResult from "@/components/clip/ClipResult";
+import ClipTimeField from "@/components/clip/ClipTimeField";
+import ClipWordPicker from "@/components/clip/ClipWordPicker";
+import { readPlayheadMs, usePlayheadMs } from "@/components/clip/usePlayhead";
+import { useRangePlayback } from "@/components/clip/useRangePlayback";
+import { useActiveWordIndex } from "@/components/player/useActiveWord";
+import { useClipRender } from "@/components/player/useClipRender";
+import { useLoadTrack } from "@/components/player/useLoadTrack";
 import {
+  MAX_VIDEO_CLIP_MS,
   MIN_CLIP_MS,
   canClipSegment,
   defaultClipRange,
-  moveClipEnd,
-  moveClipStart,
+  spanProblem,
 } from "@/lib/clip-range";
-import type { ClipRange } from "@/lib/clip-range";
 import { formatMs } from "@/lib/format";
+import {
+  moveTrimEnd,
+  moveTrimStart,
+  nearestWordIndex,
+  trimFromTimes,
+  trimTimesMs,
+} from "@/lib/word-trim";
+import type { WordTrim } from "@/lib/word-trim";
 import type {
-  Clip,
   ClipOutput,
-  ClipStatus,
   Segment,
+  TranscriptWord,
   Waveform,
 } from "@/types/models";
 
 interface ClipComposerProps {
   segment: Segment;
+  /** Word-level transcript — the unit the trim is expressed in. */
+  words: TranscriptWord[];
   /** Closes an embedding surface (the standalone page has no such bar). */
   onClose?: () => void;
 }
 
-/** Server-side render presets — the swatches mirror what the video will look like. */
-const PRESETS = [
-  { id: "classic", label: "كلاسيكي", bg: "#141412", ink: "#f0ede8" },
-  { id: "night", label: "ليلي", bg: "#0d2e1f", ink: "#d4eee3" },
-  { id: "light", label: "فاتح", bg: "#f4f4f2", ink: "#141412" },
-] as const;
-
-type PresetId = (typeof PRESETS)[number]["id"];
-
-const POLL_INTERVAL_MS = 3_000;
-/** ~2 minutes of polling before handing the reader a link and stepping back. */
-const MAX_POLLS = 40;
-
-/** Bars drawn for the waveform strip, however many buckets the JSON carries. */
-const MAX_BARS = 200;
-
-/** Keyboard nudge for the range handles. */
-const NUDGE_MS = 1_000;
-
-const STATUS_LABEL: Record<ClipStatus, string> = {
-  queued: "في قائمة الانتظار…",
-  rendering: "جارٍ إنشاء المقطع…",
-  done: "المقطع جاهز",
-  failed: "تعذّر إنشاء المقطع",
-};
-
-const THROTTLED = "وصلنا عدد كبير من طلباتك — جرّب مرة أخرى بعد ساعة، مع الشكر";
-const GENERIC = "تعذّر إنشاء المقطع الآن. حاول مرة أخرى بعد قليل.";
-
-/** Peak buckets reduced to at most MAX_BARS, keeping the loudest of each group. */
-function toBars(peaks: number[]): number[] {
-  if (peaks.length <= MAX_BARS) return peaks;
-  const groupSize = peaks.length / MAX_BARS;
-  const bars: number[] = [];
-  for (let bar = 0; bar < MAX_BARS; bar += 1) {
-    const from = Math.floor(bar * groupSize);
-    const to = Math.min(peaks.length, Math.floor((bar + 1) * groupSize));
-    let loudest = 0;
-    for (let i = from; i < to; i += 1) loudest = Math.max(loudest, peaks[i]);
-    bars.push(loudest);
-  }
-  return bars;
-}
-
-/** Live playhead of this segment, or 0 when something else is loaded. */
-function playheadMs(segmentId: number): number {
-  const { current, positionMs, _el } = useAudioStore.getState();
-  if (current === null || current.segmentId !== segmentId) return 0;
-  return _el ? Math.floor(_el.currentTime * 1000) : positionMs;
-}
+/** Ready-made spans, measured forward from the current start. */
+const QUICK_SPANS_MS = [15_000, 30_000, 60_000] as const;
 
 /**
  * "مقطع للمشاركة" — the clip composer.
+ *
+ * The range is chosen by pointing at WORDS, with the waveform demoted to an
+ * overview strip you navigate with. The old picker put both trim handles on a
+ * waveform of 800 buckets: over an 84-minute segment that is ~25 seconds per
+ * drawn bar, so a 30-second selection was one bar wide and the two handles
+ * landed on the same pixel with only the top one grabbable. Words are the right
+ * unit anyway — what gets clipped is a sentence, not an interval.
  *
  * Shown as a standalone page at `/listen/[segmentId]/clip`; `onClose` turns the
  * cancel action into a back button when the composer is embedded somewhere
@@ -87,25 +68,40 @@ function playheadMs(segmentId: number): number {
  */
 export default function ClipComposer({
   segment,
+  words,
   onClose,
 }: ClipComposerProps) {
   const durationMs = segment.duration_ms;
-  const clippable = canClipSegment(durationMs);
+  const clippable = canClipSegment(durationMs) && words.length > 0;
 
-  const [range, setRange] = useState<ClipRange>(() =>
-    defaultClipRange(playheadMs(segment.id), durationMs)
+  // Opened from the listen page, the track is usually already loaded; opened
+  // by URL it is not, and the preview button would have nothing to play.
+  useLoadTrack(segment, null);
+
+  const [trim, setTrim] = useState<WordTrim>(() =>
+    trimFromTimes(
+      words,
+      defaultClipRange(readPlayheadMs(segment.id), durationMs)
+    )
   );
-  const [preset, setPreset] = useState<PresetId>("classic");
+  const [theme, setTheme] = useState<ClipTheme>(CLIP_THEMES[0]);
   const [output, setOutput] = useState<ClipOutput>("video");
+  const [scrollTo, setScrollTo] = useState<{ index: number } | null>(null);
 
-  // null = still loading, [] = unavailable (falls back to two sliders).
+  // null = still loading, [] = unavailable (the strip degrades to a plain axis).
   const [peaks, setPeaks] = useState<number[] | null>(null);
 
-  const [clipId, setClipId] = useState<string | null>(null);
-  const [clip, setClip] = useState<Clip | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [message, setMessage] = useState("");
-  const [timedOut, setTimedOut] = useState(false);
+  const render = useClipRender();
+  const { activeRange, playRange, stop } = useRangePlayback(segment.id);
+  const activeWordIndex = useActiveWordIndex(segment.id, words);
+  const playheadMs = usePlayheadMs(segment.id);
+
+  const range = useMemo(
+    () => (clippable ? trimTimesMs(words, trim) : { startMs: 0, endMs: 0 }),
+    [clippable, words, trim]
+  );
+  const spanMs = range.endMs - range.startMs;
+  const problem = spanProblem(spanMs, output);
 
   // ---- waveform -----------------------------------------------------------
   useEffect(() => {
@@ -122,6 +118,8 @@ export default function ClipComposer({
         if (cancelled) return;
         setPeaks(Array.isArray(data.peaks) ? data.peaks : []);
       } catch {
+        // Usually the bucket's CORS policy, not a missing file. The strip
+        // draws a plain time axis and everything else still works.
         if (!cancelled) setPeaks([]);
       }
     };
@@ -133,404 +131,205 @@ export default function ClipComposer({
     };
   }, [segment.waveform_url]);
 
-  const bars = useMemo(() => (peaks ? toBars(peaks) : []), [peaks]);
+  // ---- moving the trim ----------------------------------------------------
+  const setStartMs = (ms: number): void =>
+    setTrim((previous) =>
+      moveTrimStart(words, previous, nearestWordIndex(words, ms))
+    );
+  const setEndMs = (ms: number): void =>
+    setTrim((previous) =>
+      moveTrimEnd(words, previous, nearestWordIndex(words, ms))
+    );
 
-  // ---- render polling -----------------------------------------------------
-  useEffect(() => {
-    if (clipId === null) return;
-
-    let cancelled = false;
-    let attempts = 0;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const poll = async () => {
-      attempts += 1;
-      try {
-        const next = await getClip(clipId);
-        if (cancelled) return;
-        setClip(next);
-        if (next.status === "done" || next.status === "failed") return;
-      } catch {
-        if (cancelled) return;
-      }
-      if (attempts >= MAX_POLLS) {
-        setTimedOut(true);
-        return;
-      }
-      timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
-    };
-
-    timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [clipId]);
-
-  // ---- dragging -----------------------------------------------------------
-  const trackRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef<"start" | "end" | null>(null);
-
-  // The strip is a time axis, so it stays left-to-right inside the RTL page.
-  const msFromClientX = useCallback(
-    (clientX: number): number => {
-      const element = trackRef.current;
-      if (element === null) return 0;
-      const rect = element.getBoundingClientRect();
-      if (rect.width === 0) return 0;
-      const ratio = (clientX - rect.left) / rect.width;
-      return Math.round(Math.min(Math.max(ratio, 0), 1) * durationMs);
-    },
-    [durationMs]
-  );
-
-  const moveHandle = useCallback(
-    (handle: "start" | "end", ms: number) => {
-      setRange((previous) =>
-        handle === "start"
-          ? moveClipStart(previous, ms, durationMs)
-          : moveClipEnd(previous, ms, durationMs)
-      );
-    },
-    [durationMs]
-  );
-
-  const handleProps = (handle: "start" | "end") => ({
-    onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      draggingRef.current = handle;
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (draggingRef.current !== handle) return;
-      moveHandle(handle, msFromClientX(event.clientX));
-    },
-    onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
-      draggingRef.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-    },
-    onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
-      const at = handle === "start" ? range.startMs : range.endMs;
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        moveHandle(handle, at - NUDGE_MS);
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        moveHandle(handle, at + NUDGE_MS);
-      }
-    },
-  });
-
-  // ---- submit -------------------------------------------------------------
-  const spanMs = range.endMs - range.startMs;
-
-  const submit = async () => {
-    setCreating(true);
-    setMessage("");
-    setTimedOut(false);
-    try {
-      const created = await createClip({
-        segment_id: segment.id,
-        start_ms: range.startMs,
-        end_ms: range.endMs,
-        preset,
-        output,
-      });
-      setClip({
-        id: created.id,
-        status: created.status,
-        output,
-        video_url: null,
-        audio_url: null,
-      });
-      setClipId(created.id);
-    } catch (error) {
-      setMessage(
-        error instanceof ApiError && error.status === 429 ? THROTTLED : GENERIC
-      );
-    } finally {
-      setCreating(false);
-    }
+  const scrub = (ms: number): void => {
+    // Navigation, not selection: move the listening position and bring the
+    // matching part of the transcript into view. The trim stays put.
+    const index = nearestWordIndex(words, ms);
+    if (index >= 0) setScrollTo({ index });
   };
 
-  const percent = (ms: number) =>
-    durationMs === 0 ? 0 : (ms / durationMs) * 100;
-  const startPercent = percent(range.startMs);
-  const endPercent = percent(range.endMs);
+  const captureStart = (): void => setStartMs(readPlayheadMs(segment.id));
+  const captureEnd = (): void => setEndMs(readPlayheadMs(segment.id));
 
-  const startBar = Math.floor((startPercent / 100) * bars.length);
-  const endBar = Math.ceil((endPercent / 100) * bars.length) - 1;
+  const quickSpan = (ms: number): void =>
+    setTrim(trimFromTimes(words, { startMs: range.startMs, endMs: range.startMs + ms }));
+
+  // ---- submit -------------------------------------------------------------
+  const submit = (): void =>
+    render.submit({
+      segment_id: segment.id,
+      start_ms: range.startMs,
+      end_ms: range.endMs,
+      preset: CLIP_THEME_PRESET[theme.id],
+      output,
+    });
+
+  if (!clippable) {
+    return (
+      <section
+        aria-label="إنشاء مقطع للمشاركة"
+        className="mt-4 basis-full border-t border-[var(--lp-card-border)] pt-4"
+      >
+        <p className="text-sm text-[var(--color-ink-muted)]">
+          هذا المقطع أقصر من {MIN_CLIP_MS / 1000} ثانية، ولا يمكن اقتطاع مقطع
+          منه.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section
       aria-label="إنشاء مقطع للمشاركة"
       className="mt-4 basis-full border-t border-[var(--lp-card-border)] pt-4"
     >
-      {!clippable ? (
-        <p className="text-sm text-[var(--color-ink-muted)]">
-          هذا المقطع أقصر من {MIN_CLIP_MS / 1000} ثانية، ولا يمكن اقتطاع مقطع
-          منه.
+      {/* ---- overview: where you are in the whole segment ---------------- */}
+      <ClipOverviewStrip
+        durationMs={durationMs}
+        peaks={peaks ?? []}
+        range={range}
+        playheadMs={playheadMs}
+        onScrub={scrub}
+      />
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <ClipTimeField label="من" valueMs={range.startMs} onCommit={setStartMs} />
+        <ClipTimeField label="إلى" valueMs={range.endMs} onCommit={setEndMs} />
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-xs text-[var(--color-ink-muted)]"
+        >
+          المدة {formatMs(spanMs)}
+          {problem === "too-short"
+            ? ` — الحد الأدنى ${MIN_CLIP_MS / 1000} ثانية`
+            : problem === "too-long-for-video"
+              ? ` — أقصى مدة للفيديو ${MAX_VIDEO_CLIP_MS / 60_000} دقائق؛ اختر «صوت فقط» لمقطع أطول`
+              : ""}
         </p>
-      ) : (
-        <>
-          {/* ---- range picker ------------------------------------------- */}
-          {peaks === null ? (
-            <p className="text-xs text-[var(--color-ink-faint)]">
-              جارٍ تحميل الموجة الصوتية…
-            </p>
-          ) : bars.length > 0 ? (
-            <div
-              ref={trackRef}
-              dir="ltr"
-              className="relative h-16 w-full touch-none select-none border border-[var(--lp-card-border)]"
-            >
-              <svg
-                viewBox={`0 0 ${bars.length} 100`}
-                preserveAspectRatio="none"
-                className="h-full w-full"
-                aria-hidden="true"
-              >
-                {bars.map((peak, index) => {
-                  const height = Math.max(2, peak * 100);
-                  const inside = index >= startBar && index <= endBar;
-                  return (
-                    <rect
-                      key={index}
-                      x={index + 0.15}
-                      y={(100 - height) / 2}
-                      width={0.7}
-                      height={height}
-                      fill={
-                        inside
-                          ? "var(--color-ink)"
-                          : "var(--color-ink-faint)"
-                      }
-                    />
-                  );
-                })}
-              </svg>
+      </div>
 
-              {(["start", "end"] as const).map((handle) => {
-                const at = handle === "start" ? range.startMs : range.endMs;
-                return (
-                  <button
-                    key={handle}
-                    type="button"
-                    role="slider"
-                    aria-label={
-                      handle === "start" ? "بداية المقطع" : "نهاية المقطع"
-                    }
-                    aria-valuemin={0}
-                    aria-valuemax={durationMs}
-                    aria-valuenow={at}
-                    aria-valuetext={formatMs(at)}
-                    className="absolute inset-y-0 w-6 -translate-x-1/2 cursor-ew-resize touch-none bg-transparent"
-                    style={{ left: `${percent(at)}%` }}
-                    {...handleProps(handle)}
-                  >
-                    <span className="pointer-events-none mx-auto block h-full w-0.5 bg-[var(--color-ink)]" />
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div dir="ltr" className="space-y-2">
-              <input
-                type="range"
-                min={0}
-                max={Math.max(1, durationMs)}
-                step={500}
-                value={range.startMs}
-                onChange={(event) =>
-                  moveHandle("start", Number(event.target.value))
-                }
-                aria-label="بداية المقطع"
-                className="w-full accent-[var(--color-accent)]"
-              />
-              <input
-                type="range"
-                min={0}
-                max={Math.max(1, durationMs)}
-                step={500}
-                value={range.endMs}
-                onChange={(event) =>
-                  moveHandle("end", Number(event.target.value))
-                }
-                aria-label="نهاية المقطع"
-                className="w-full accent-[var(--color-accent)]"
-              />
-            </div>
-          )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            activeRange !== null ? stop() : playRange(range)
+          }
+          className="listen-chip"
+        >
+          {activeRange !== null ? "إيقاف المعاينة" : "استمع للتحديد"}
+        </button>
+        <button
+          type="button"
+          onClick={captureStart}
+          className="min-h-11 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-ink-muted)]"
+        >
+          بداية من الموضع
+        </button>
+        <button
+          type="button"
+          onClick={captureEnd}
+          className="min-h-11 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-ink-muted)]"
+        >
+          نهاية عند الموضع
+        </button>
+        {QUICK_SPANS_MS.map((ms) => (
+          <button
+            key={ms}
+            type="button"
+            onClick={() => quickSpan(ms)}
+            className="min-h-11 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-ink-muted)]"
+          >
+            {ms / 1000} ثانية
+          </button>
+        ))}
+      </div>
 
-          <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
-            <span dir="ltr" className="tabular-nums">
-              {formatMs(range.startMs)} – {formatMs(range.endMs)}
-            </span>{" "}
-            · المدة {Math.round(spanMs / 1000)} ثانية · الحد الأدنى{" "}
-            {MIN_CLIP_MS / 1000} ثانية وحتى نهاية المقطع
+      {/* ---- the picker itself, beside a live card ---------------------- */}
+      <div className="mt-2 flex flex-wrap gap-6">
+        <div className="min-w-[280px] flex-1">
+          <p className="text-xs text-[var(--color-ink-faint)]">
+            اضغط كلمةً لتحريك أقرب حدّ، أو اسحب المقبضين — القصّ يتبع الكلمات، لا
+            الموجة الصوتية.
           </p>
+          <ClipWordPicker
+            words={words}
+            trim={trim}
+            setTrim={setTrim}
+            activeWordIndex={activeWordIndex}
+            scrollTo={scrollTo}
+          />
+        </div>
 
-          {/* ---- output ------------------------------------------------- */}
-          <fieldset className="mt-4">
-            <legend className="text-xs text-[var(--color-ink-faint)]">
-              الصيغة
-            </legend>
-            <div className="mt-2 flex flex-wrap gap-3">
-              {(
-                [
-                  { id: "video", label: "فيديو" },
-                  { id: "audio", label: "صوت فقط" },
-                ] as const
-              ).map((option) => {
-                const selected = option.id === output;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setOutput(option.id)}
-                    aria-pressed={selected}
-                    className="flex items-center gap-2 border px-2 py-1.5 text-xs"
-                    style={{
-                      borderColor: selected
-                        ? "var(--color-ink)"
-                        : "var(--color-border)",
-                      color: selected
-                        ? "var(--color-ink)"
-                        : "var(--color-ink-muted)",
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          {/* ---- presets ------------------------------------------------- */}
-          {output === "video" ? (
-            <fieldset className="mt-4">
-              <legend className="text-xs text-[var(--color-ink-faint)]">
-                الشكل
-              </legend>
-              <div className="mt-2 flex flex-wrap gap-3">
-                {PRESETS.map((option) => {
-                  const selected = option.id === preset;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setPreset(option.id)}
-                      aria-pressed={selected}
-                      className="flex items-center gap-2 border px-2 py-1.5 text-xs"
-                      style={{
-                        borderColor: selected
-                          ? "var(--color-ink)"
-                          : "var(--color-border)",
-                        color: selected
-                          ? "var(--color-ink)"
-                          : "var(--color-ink-muted)",
-                      }}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="flex h-6 w-4 flex-col justify-end gap-0.5 p-0.5"
-                        style={{ backgroundColor: option.bg }}
-                      >
-                        <span
-                          className="block h-0.5 w-full"
-                          style={{ backgroundColor: option.ink }}
-                        />
-                        <span
-                          className="block h-0.5 w-2/3"
-                          style={{ backgroundColor: option.ink }}
-                        />
-                      </span>
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-          ) : null}
-
-          {/* ---- submit + status ---------------------------------------- */}
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void submit()}
-              disabled={creating || clipId !== null}
-              className="listen-chip"
-            >
-              {creating
-                ? "جارٍ الإرسال…"
-                : output === "audio"
-                  ? "إنشاء الصوت"
-                  : "إنشاء الفيديو"}
-            </button>
-            {onClose !== undefined ? (
-              <button
-                type="button"
-                onClick={onClose}
-                className="text-sm text-[var(--color-ink-muted)]"
-              >
-                إلغاء
-              </button>
-            ) : (
-              <Link
-                href={`/listen/${segment.id}`}
-                className="text-sm text-[var(--color-ink-muted)] underline underline-offset-4"
-              >
-                العودة إلى الاستماع
-              </Link>
-            )}
-            {message !== "" ? (
-              <span role="status" className="text-xs text-[var(--color-ink-muted)]">
-                {message}
-              </span>
-            ) : null}
+        {output === "video" ? (
+          <div className="mx-auto shrink-0">
+            <ClipPreview
+              words={words}
+              trim={trim}
+              theme={theme}
+              // This page has no ayah alignment — that lives on the verse
+              // page's InterleavedTranscript. Every word here is machine
+              // transcript, and the card renders it as such.
+              isQuranWord={() => false}
+              activeWordIndex={activeWordIndex}
+            />
           </div>
+        ) : null}
+      </div>
 
-          {clip !== null ? (
-            <div className="mt-3 space-y-2 text-sm">
-              <p role="status" className="text-[var(--color-ink-muted)]">
-                {timedOut && clip.status !== "done"
-                  ? "ما زال الإنشاء جاريًا — افتح صفحة المقطع بعد قليل."
-                  : STATUS_LABEL[clip.status]}
-              </p>
-              {clip.status === "done" || timedOut ? (
-                <p className="flex flex-wrap items-center gap-4">
-                  <Link
-                    href={`/clip/${clip.id}?segment=${segment.id}`}
-                    className="text-[var(--color-ink)] underline underline-offset-4"
-                  >
-                    صفحة المقطع
-                  </Link>
-                  {clip.video_url !== null ? (
-                    <a
-                      href={clip.video_url}
-                      download
-                      className="text-[var(--color-ink-muted)] underline underline-offset-4"
-                    >
-                      تنزيل الفيديو
-                    </a>
-                  ) : null}
-                  {clip.audio_url !== null ? (
-                    <a
-                      href={clip.audio_url}
-                      download
-                      className="text-[var(--color-ink-muted)] underline underline-offset-4"
-                    >
-                      تنزيل الصوت
-                    </a>
-                  ) : null}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </>
-      )}
+      <div className="mt-4 flex flex-wrap gap-8">
+        <ClipOutputPicker output={output} setOutput={setOutput} />
+        {output === "video" ? (
+          <ClipPresetPicker theme={theme} setTheme={setTheme} />
+        ) : null}
+      </div>
+
+      {/* ---- submit + status ------------------------------------------- */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={problem !== null || render.busy}
+          className="listen-chip"
+        >
+          {render.creating
+            ? "جارٍ الإرسال…"
+            : render.clip !== null && !render.busy
+              ? "أعد المحاولة"
+              : output === "audio"
+                ? "إنشاء الصوت"
+                : "إنشاء الفيديو"}
+        </button>
+        {onClose !== undefined ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-[var(--color-ink-muted)]"
+          >
+            إلغاء
+          </button>
+        ) : (
+          <Link
+            href={`/listen/${segment.id}`}
+            className="text-sm text-[var(--color-ink-muted)] underline underline-offset-4"
+          >
+            العودة إلى الاستماع
+          </Link>
+        )}
+        {render.message !== "" ? (
+          <span role="status" className="text-xs text-[var(--color-ink-muted)]">
+            {render.message}
+          </span>
+        ) : null}
+      </div>
+
+      {render.clip !== null ? (
+        <ClipResult
+          clip={render.clip}
+          segmentId={segment.id}
+          timedOut={render.timedOut}
+        />
+      ) : null}
     </section>
   );
 }

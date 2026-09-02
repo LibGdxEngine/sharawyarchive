@@ -113,6 +113,46 @@ Migrations run on container start. Meilisearch reindexing is only needed when
 chunk data changes or the search volume is rebuilt:
 `python manage.py index_chunks` (idempotent upsert of every chunk row).
 
+## 6a. Clips (rendering and downloads)
+
+Two things outside the Django settings have to be true, or clips break in ways
+nothing logs loudly.
+
+**1. The backend image must carry ffmpeg.** `clips/rendering.py` shells out to
+it, and both Dockerfiles now install it along with `fonts-noto-core` (the Arabic
+face the burned-in subtitles ask for by name). The build asserts both, because
+a missing filter fails the render and a missing font renders tofu boxes into a
+shareable video instead. Confirm on a running worker after an update:
+
+```bash
+docker compose -f docker-compose.prod.yml exec celery_worker \
+  sh -c 'ffmpeg -hide_banner -filters | grep -E " (ass|showwaves|blend) " && \
+         fc-match "Noto Naskh Arabic"'
+```
+
+**2. The R2 bucket needs a CORS policy.** Plain `<audio src>` playback does not
+need one, so its absence is invisible until the clip composer tries to `fetch`
+a waveform from script (it degrades to a peakless picker) or a reader saves a
+segment offline (it silently fails). The script is idempotent — run it after
+changing `CORS_ALLOWED_ORIGINS`, and any time you are unsure:
+
+```bash
+set -a; . .env; set +a
+python scripts/r2_cors.py --dry-run   # prints "unchanged" when already correct
+python scripts/r2_cors.py
+```
+
+Verify from outside; the header is absent when the policy is missing:
+
+```bash
+curl -s -o /dev/null -D- -H 'Origin: https://athar-shaarawy.com' \
+  -r 0-0 '<a presigned waveform_url from /api/segments/10/>' | grep -i access-control
+```
+
+Downloads themselves need no CORS: `/api/clips/{id}/download/` is same-origin
+through Caddy and redirects to an object presigned with an attachment
+disposition (API_CONTRACT amendment 11).
+
 ## 8. Import the corpus database dump
 
 Use this instead of §3's ingestion when the corpus was transcribed elsewhere

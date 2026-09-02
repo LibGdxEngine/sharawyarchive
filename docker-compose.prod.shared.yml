@@ -1,0 +1,26 @@
+# Override for running this stack alongside the ilm_shamela stack on a shared VPS.
+# The single front proxy is ilm_shamela's `search_caddy` (it owns 80/443), so this
+# stack's own `caddy` service is NOT launched — bring services up by name, omitting
+# `caddy`:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.prod.shared.yml \
+#     --env-file .env.prod up -d --build \
+#     db redis meilisearch backend celery_worker celery_beat frontend
+#
+# IMPORTANT: the app containers are deliberately kept on this project's own default
+# network ONLY. They must NOT join ilm_shamela's network, because both compose
+# projects name services `db`/`redis`/`backend`/`frontend`; sharing a network makes
+# those bare names ambiguous and `backend` would resolve `db` to the wrong Postgres.
+#
+# search_caddy reaches this stack over a dedicated edge network joined by CONTAINER
+# NAME only (shaarawy_prod_backend / shaarawy_prod_frontend) — see scripts/edge-net.sh.
+# That keeps the generic service aliases off any network search_caddy is on, so the
+# live ilmshamela.com routing is unaffected.
+#
+# Worker counts are trimmed to fit the shared host's memory budget.
+services:
+  backend:
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 60
+
+  celery_worker:
+    command: celery -A core worker -l info -Q celery --concurrency=2

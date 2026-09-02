@@ -185,6 +185,45 @@ MEILI_MASTER_KEY = os.environ.get('MEILI_MASTER_KEY', 'devmasterkey')
 # Prefix lets test runs isolate their indexes on a shared Meilisearch.
 MEILI_INDEX_PREFIX = os.environ.get('MEILI_INDEX_PREFIX', '')
 
+
+# ---------------------------------------------------------------------------
+# Smart search («بحث ذكي»): LLM-assisted, cited answers over the machine
+# transcripts (docs/smart-search/). Every model call goes through OpenRouter.
+# The feature stays off until the Phase 6 evaluation gates pass; with the flag
+# off the endpoint answers 503 and no provider call is ever made.
+# ---------------------------------------------------------------------------
+def _env_flag(name: str, default: str = 'false') -> bool:
+    return os.environ.get(name, default).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+SMART_ENABLED = _env_flag('SMART_ENABLED')
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+OPENROUTER_BASE_URL = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+# Slugs verified on openrouter.ai on 2026-09-02 (docs/smart-search/audit.md §4).
+SMART_PLANNER_MODEL = os.environ.get('SMART_PLANNER_MODEL', 'google/gemini-3.1-flash-lite')
+SMART_RERANK_MODEL = os.environ.get('SMART_RERANK_MODEL', 'google/gemini-3.1-flash-lite')
+SMART_GENERATOR_MODEL = os.environ.get('SMART_GENERATOR_MODEL', 'google/gemini-3.8-flash')
+# Query and passage vectors MUST come from the same model and dimension; the
+# tag "<model>@<dims>" is stored on every embedded row and in every cache key.
+SMART_EMBEDDING_MODEL = os.environ.get('SMART_EMBEDDING_MODEL', 'qwen/qwen3-embedding-8b')
+SMART_EMBEDDING_DIMENSIONS = int(os.environ.get('SMART_EMBEDDING_DIMENSIONS', '1024'))
+SMART_DAILY_BUDGET_USD = float(os.environ.get('SMART_DAILY_BUDGET_USD', '5'))
+SMART_MAX_INFLIGHT = int(os.environ.get('SMART_MAX_INFLIGHT', '3'))
+# Whole-request budget; each stage is given min(its timeout, what is left).
+SMART_REQUEST_BUDGET_S = float(os.environ.get('SMART_REQUEST_BUDGET_S', '40'))
+SMART_STAGE_TIMEOUTS_S = {'planner': 8.0, 'embed': 6.0, 'rerank': 12.0, 'generate': 30.0}
+SMART_CACHE_TTL_S = 7 * 24 * 3600
+# rapidfuzz partial_ratio_alignment score a quote must reach to be cited.
+SMART_QUOTE_MIN_SCORE = int(os.environ.get('SMART_QUOTE_MIN_SCORE', '90'))
+# Fallback prices, USD per million tokens (prompt, completion), used only when
+# a response carries no `usage.cost`. List prices as of 2026-09-02.
+SMART_PRICES_USD_PER_MTOKEN: dict[str, tuple[float, float]] = {
+    'google/gemini-3.1-flash-lite': (0.25, 1.50),
+    'google/gemini-3.8-flash': (0.75, 3.75),
+    'qwen/qwen3-embedding-8b': (0.01, 0.0),
+    'qwen/qwen3-embedding-0.6b': (0.01, 0.0),
+}
+
 # Object storage for audio/waveforms/clips (MinIO in dev, Cloudflare R2 in prod).
 AUDIO_S3_ENDPOINT_URL = os.environ.get('AUDIO_S3_ENDPOINT_URL', 'http://localhost:9000')
 AUDIO_S3_BUCKET = os.environ.get('AUDIO_S3_BUCKET', 'shaarawy')

@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest
+import respx
 from meilisearch.errors import MeilisearchApiError
 from pytest_django.fixtures import Settings
 
@@ -224,3 +225,48 @@ def indexed_quran(ayahs_index: str, quran_slice: dict[int, Surah]) -> None:
 def indexed_corpus(chunks_index: str, corpus: CorpusFixture) -> CorpusFixture:
     services.index_chunks(corpus.chunks)
     return corpus
+
+
+# --- Smart search ------------------------------------------------------------
+
+
+@pytest.fixture
+def smart_settings(settings: Settings) -> Settings:
+    """Smart search switched on against a fake provider with tiny vectors."""
+    settings.SMART_ENABLED = True
+    settings.OPENROUTER_API_KEY = "test-key"
+    settings.OPENROUTER_BASE_URL = "https://openrouter.test/api/v1"
+    settings.SITE_BASE_URL = "https://archive.test"
+    settings.SMART_PLANNER_MODEL = "test/planner"
+    settings.SMART_RERANK_MODEL = "test/rerank"
+    settings.SMART_GENERATOR_MODEL = "test/generator"
+    settings.SMART_EMBEDDING_MODEL = "test/embed"
+    settings.SMART_EMBEDDING_DIMENSIONS = 8
+    settings.SMART_DAILY_BUDGET_USD = 5.0
+    settings.SMART_PRICES_USD_PER_MTOKEN = {"test/planner": (1.0, 2.0), "test/embed": (0.5, 0.0)}
+    return settings
+
+
+@pytest.fixture
+def fast_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same retry policy without the backoff sleeps."""
+    from tenacity import Retrying, retry_if_exception, stop_after_attempt
+
+    from search.smart import llm
+
+    monkeypatch.setattr(
+        llm,
+        "_retrying",
+        lambda: Retrying(
+            stop=stop_after_attempt(llm.ATTEMPTS),
+            retry=retry_if_exception(llm._retryable),
+            reraise=True,
+        ),
+    )
+
+
+@pytest.fixture
+def openrouter(smart_settings: Settings, fast_retries: None) -> Iterator[respx.MockRouter]:
+    """Every HTTP call to the configured OpenRouter base URL lands here."""
+    with respx.mock(base_url=smart_settings.OPENROUTER_BASE_URL, assert_all_called=False) as router:
+        yield router

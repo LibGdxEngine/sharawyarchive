@@ -97,3 +97,8 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - Owner decisions: new `search.Passage` table over existing chunks (Chunk untouched); embeddings `qwen/qwen3-embedding-8b` via OpenRouter at 1024 dims (halfvec); exact mode gets a stem tier in the verifier with 4/8 thresholds kept and quotes = zero typos; anonymous access 20/h/IP with a $5/day cap; Arabic-only answers.
 - Verified OpenRouter slugs/prices: google/gemini-3.1-flash-lite ($0.25/$1.50), google/gemini-3.8-flash ($0.75/$3.75), qwen/qwen3-embedding-8b ($0.01/M; corpus ≈ $0.15).
 - Work happens in a separate worktree (/root/home/sharawyarchive-smart) so the production checkout, which other sessions edit, is never swept into a branch.
+
+## Smart search — Phase 1 foundation (2026-09-02)
+- backend/search/smart/: schemas (strict JSON schema helper), llm (OpenRouter via openai SDK, tenacity retries, Deadline, usage/cost, budget check, Matryoshka truncation), prompts v1, cache (keys carry prompt version + embedding tag; daily-salted ip_hash), budget (micro-USD spend counter; in-flight ZSET lease via Lua). SmartQuery model = search app's first migration; read-only admin.
+- Live smoke test with the real key: OpenRouter forwards dimensions=1024 for qwen/qwen3-embedding-8b (4096 native); gemini-3.1-flash-lite honours strict json_schema + require_parameters (planner: 1066/153 tokens, $0.0005, 1.7 s).
+- Tests fake the provider with respx; search+api suites green (217) in the throwaway docker network; ruff clean.

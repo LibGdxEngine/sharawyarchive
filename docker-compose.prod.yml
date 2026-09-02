@@ -82,6 +82,15 @@ services:
       - ALLOW_STUB_ENGINES=${ALLOW_STUB_ENGINES:-}
       - CO_API_KEY=${CO_API_KEY:-}
       - COHERE_ASR_MODEL=${COHERE_ASR_MODEL:-cohere-transcribe-arabic-07-2026}
+      # Smart search («بحث ذكي», docs/smart-search/). Off until the eval gates
+      # pass; the key lives in .env.prod only.
+      - SMART_ENABLED=${SMART_ENABLED:-false}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - SMART_PLANNER_MODEL=${SMART_PLANNER_MODEL:-google/gemini-3.1-flash-lite}
+      - SMART_RERANK_MODEL=${SMART_RERANK_MODEL:-google/gemini-3.1-flash-lite}
+      - SMART_GENERATOR_MODEL=${SMART_GENERATOR_MODEL:-google/gemini-3.8-flash}
+      - SMART_EMBEDDING_MODEL=${SMART_EMBEDDING_MODEL:-qwen/qwen3-embedding-8b}
+      - SMART_DAILY_BUDGET_USD=${SMART_DAILY_BUDGET_USD:-5}
     depends_on:
       db:
         condition: service_healthy

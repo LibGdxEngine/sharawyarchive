@@ -16,3 +16,9 @@ requests>=2.32.0
 numpy>=1.26.0
 sentry-sdk[django]>=2.0
 
+
+# Smart search («بحث ذكي»): OpenRouter client, typed stage contracts, retries, quote alignment.
+openai>=1.60,<3
+pydantic>=2.7
+tenacity>=8.3
+rapidfuzz>=3.9

@@ -58,6 +58,13 @@ from core.engines_guard import check_engines  # noqa: E402
 
 check_engines(os.environ)
 
+# Smart search must not be switched on without a provider key: the endpoint
+# would accept requests and degrade every one of them.
+if SMART_ENABLED and not OPENROUTER_API_KEY:  # noqa: F405
+    from django.core.exceptions import ImproperlyConfigured  # noqa: E402
+
+    raise ImproperlyConfigured('SMART_ENABLED=true requires OPENROUTER_API_KEY')
+
 # ---------------------------------------------------------------------------
 # Structured JSON logging
 # ---------------------------------------------------------------------------

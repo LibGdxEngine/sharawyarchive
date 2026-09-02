@@ -28,6 +28,11 @@ Required values in `.env`:
   alternative. Word-level timings always come from the local CTC aligner
   (`pipeline/requirements.txt`), whichever recognizer produces the text.
 - Behind Cloudflare's proxy set `SECURE_SSL_REDIRECT=False` (Cloudflare terminates TLS).
+- `OPENROUTER_API_KEY` and `SMART_ENABLED` — smart search («بحث ذكي»,
+  `docs/smart-search/`). Leave `SMART_ENABLED=false` until the evaluation gates
+  pass; production refuses to boot with the flag on and no key. The model slugs
+  and the daily cap (`SMART_DAILY_BUDGET_USD`, default 5) have defaults in
+  `docker-compose.prod.yml`.
 
 ## 2. Start
 

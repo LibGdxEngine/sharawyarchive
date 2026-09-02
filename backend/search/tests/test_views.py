@@ -101,7 +101,7 @@ def test_an_unknown_query_param_is_ignored(
 def test_filters_are_forwarded_to_the_services_layer(
     api: APIClient, indexed_corpus: CorpusFixture
 ) -> None:
-    body = api.get(URL, {"q": "ال", "kind": SegmentKind.KHAWATIR, "surah": 2}).json()
+    body = api.get(URL, {"q": "القلب", "kind": SegmentKind.KHAWATIR, "surah": 2}).json()
     assert body["results"]
     assert {result["kind"] for result in body["results"]} == {SegmentKind.KHAWATIR}
     assert {result["surah"] for result in body["results"]} == {2}
@@ -125,12 +125,14 @@ def test_kind_khawatir_returns_transcripts_only(
     assert {result["kind"] for result in body["results"]} == {SegmentKind.KHAWATIR}
 
 
-def test_page_selects_a_later_slice(api: APIClient, indexed_corpus: CorpusFixture) -> None:
-    first = api.get(URL, {"q": "ال"}).json()
-    second = api.get(URL, {"q": "ال", "page": 2}).json()
-    assert second["page"] == 2
-    first_ids = {result["chunk_id"] for result in first["results"]}
-    assert first_ids.isdisjoint({result["chunk_id"] for result in second["results"]})
+def test_page_beyond_the_results_is_empty_but_keeps_total(
+    api: APIClient, indexed_corpus: CorpusFixture
+) -> None:
+    first = api.get(URL, {"q": "القلب"}).json()
+    second = api.get(URL, {"q": "القلب", "page": 2}).json()
+    assert len(first["results"]) == 4
+    assert (second["page"], second["results"]) == (2, [])
+    assert first["total"] == second["total"] == 4
 
 
 @pytest.mark.parametrize(

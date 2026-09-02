@@ -149,3 +149,19 @@ search 30/min anon; corrections 10/hour; clips 5/hour → 429 with `Retry-After`
     Both URLs name the public site (`SITE_BASE_URL`), never the caller's host —
     the frontend renders the clip page server-side against the cluster-internal
     API address, which must not reach a browser.
+12. **Strict phrase search** (2026-09-02): `GET /api/search/` matches the
+   query as a phrase. Every query word must occur in the chunk (or verse)
+   **consecutively and in the same order**; each word may differ from the
+   text by a typo budget set by its length after normalization — 1–3 letters
+   exact, 4–7 letters one edit, 8 or more letters two edits (an edit is an
+   inserted, missing, wrong or transposed letter; the first letter must
+   always match, so `الله` never matches `بالله`). Prefix matching of the
+   last word is gone: `الص` finds nothing, `الصبر عند الصدم` still finds
+   `الصبر عند الصدمة` (one missing letter). `verse_matches` matches either the
+   Uthmani or the imlaei spelling (`السماوات` finds `ٱلسَّمَـٰوَٰتِ`). `total`
+   is now the exact number of verified chunks, computed over Meilisearch's
+   first 1000 candidates (a lower bound only for phrases with more than 1000
+   candidates); it is identical on every page. This supersedes the "estimate"
+   wording of amendment 2. `GET /api/search/suggest/` stays prefix-based but
+   returns only snippets that contain every typed word, cut on a word
+   boundary so a clicked suggestion always matches itself.

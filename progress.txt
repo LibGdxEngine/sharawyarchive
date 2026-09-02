@@ -20,6 +20,11 @@
 ## Search landed (US-006)
 - search.services public API: ensure_chunks_index/index_chunks/delete_segment_chunks/search/rrf_merge/parse_ayah_reference; SearchResponse dataclasses.
 - Meili matchingStrategy must be "all": default "last" drops words until the ال prefix matches everything (verified live) — lexical precision, semantic recall.
+- Strict phrase search (2026-09-02): Meili is only the candidate generator (pool of VERIFY_POOL=1000, rankingRules proximity-before-typo so adjacent phrases fill the pool first); search/matching.py verifies each hit — words consecutive, in order, per-word typo budget 0/1/2 at 1-3/4-7/8+ letters, first letter must match. `total` = verified count.
+  - Meili `minWordSizeForTypos` counts characters, not bytes (verified live on v1.15.2: with 8/16 a 5-letter Arabic word got no typo) — settings are 4/8, the same constants as matching.py.
+  - Meili quirk (verified live): for words starting with the article ال it never retrieves typos in the first two letters (`انصبر`, `بلمومنين` → nothing) while for other words it retrieves first-letter typos despite the "counts as two" doc rule. Hence the verifier's flat "first letter must match" rule — deterministic whatever the engine returns.
+  - Suggest now uses matchingStrategy "all" too: with "last" a single rare word is dropped from the query and every chunk comes back as a suggestion. Prefix matching of the last word is independent of the strategy.
+  - Ayahs index carries `text_imlaei_normalized` next to the Uthmani `text_normalized` (readers type السماوات/ابراهيم, the mushaf says السموت/ابرهم). Deploy: run `manage.py index_chunks` and `manage.py index_quran` once so the new settings and the imlaei field land.
 - HNSW confirmed in EXPLAIN under enable_seqscan=off (chunk_embedding_hnsw index scan).
 - mypy baseline: django-stubs plugin not enabled in backend/pyproject.toml (78 pre-existing errors in corpus/quran) — decide in US-016 whether to enable plugin or keep mypy advisory (Makefile already treats mypy as advisory).
 

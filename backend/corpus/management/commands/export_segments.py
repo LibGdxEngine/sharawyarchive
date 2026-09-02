@@ -1,34 +1,34 @@
-"""Dump Segment rows (with their Source and AudioAsset) to a JSON list.
+"""Export the segment mapping — segments plus their source and audio rows — as JSON.
 
-The inverse of ``import_segments``: the two round-trip the ayah↔audio mapping
-between environments (e.g. dev → prod) without touching the audio objects
-themselves, which travel separately in the R2/S3 bucket.
+The counterpart of ``import_segments``: together they move a corpus mapping
+between databases without re-running the pipeline. Audio bytes never travel,
+only the rows pointing at them, so a mapping is only meaningful against object
+storage that already holds those keys (``import_segments --verify-r2`` checks).
 
-Each record carries the segment's fields plus a nested ``source`` and ``audio``
-object. ``surah`` is the surah *number* (``Surah`` is keyed by it), so the
-importer resolves it against whatever Quran text is already loaded — Quran data
-is never carried in this file (``CLAUDE.md`` rule 1).
+Nothing here writes to the database.
 """
 
 from __future__ import annotations
 
 import json
-import sys
+from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandParser
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from corpus.models import Segment, SegmentKind
 
 
-def serialize_segment(segment: Segment) -> dict[str, Any]:
+def serialize(segment: Segment) -> dict[str, Any]:
+    """One segment as the JSON record ``import_segments`` reads back."""
+    source = segment.source
     audio = segment.audio
     return {
         "source": {
-            "title": segment.source.title,
-            "kind": segment.source.kind,
-            "description": segment.source.description,
-            "rights_note": segment.source.rights_note,
+            "title": source.title,
+            "kind": source.kind,
+            "description": source.description,
+            "rights_note": source.rights_note,
         },
         "kind": segment.kind,
         "surah": segment.surah_id,
@@ -51,42 +51,29 @@ def serialize_segment(segment: Segment) -> dict[str, Any]:
 
 
 class Command(BaseCommand):
-    help = "Export Segment/Source/AudioAsset rows to a JSON list (round-trips with import_segments)."
+    help = "Export Segment rows, with their Source and AudioAsset rows, to a JSON file."
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--output",
-            default="-",
-            help="Destination file, or '-' for stdout (default).",
-        )
-        parser.add_argument(
-            "--source", default=None, help="Only segments filed under this Source title."
-        )
+        parser.add_argument("output", help="Path of the JSON file to write.")
         parser.add_argument(
             "--kind",
-            default=None,
             choices=SegmentKind.values,
-            help="Only segments of this kind.",
+            default=None,
+            help="Only export segments of this kind.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        qs = Segment.objects.select_related("source", "audio", "surah").order_by(
+        segments = Segment.objects.select_related("source", "audio").order_by(
             "source_id", "ordinal", "id"
         )
-        if options["source"] is not None:
-            qs = qs.filter(source__title=options["source"])
-        if options["kind"] is not None:
-            qs = qs.filter(kind=options["kind"])
+        if options["kind"]:
+            segments = segments.filter(kind=options["kind"])
 
-        data = [serialize_segment(seg) for seg in qs.iterator()]
-        payload = json.dumps(data, ensure_ascii=False, indent=1)
+        data = [serialize(segment) for segment in segments]
+        output = Path(options["output"])
+        try:
+            output.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            raise CommandError(f"could not write {output}: {exc}") from exc
 
-        if options["output"] == "-":
-            sys.stdout.write(payload)
-            sys.stdout.write("\n")
-        else:
-            with open(options["output"], "w", encoding="utf-8") as fh:
-                fh.write(payload)
-            self.stdout.write(
-                self.style.SUCCESS(f"exported {len(data)} segments to {options['output']}")
-            )
+        self.stdout.write(self.style.SUCCESS(f"wrote {len(data)} segments to {output}"))

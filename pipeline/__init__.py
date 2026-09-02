@@ -17,6 +17,8 @@ Entry points
     Transcribe audio already in object storage (imported, never processed).
 ``python -m pipeline.parsers --dry-run FOLDER``
     Filename parser preview; writes nothing, needs no database.
+``python -m pipeline.upload_r2``
+    Raw corpus MP3s → R2 + surah/ayah mapping JSON; needs no database.
 ``celery -A pipeline.celery_app worker -Q pipeline``
     Async worker for the stages dispatched by ``manage.py run_pipeline``.
 """

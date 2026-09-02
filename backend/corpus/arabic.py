@@ -153,11 +153,12 @@ def normalize_for_index(s: str) -> str:
 # stem is a false match wherever stems are compared. They are stripped only
 # together with the article (``بال``, ``كال``, ``فال``, ``لل``).
 
-_STEM_PREFIXES: tuple[str, ...] = ("وال", "بال", "فال", "كال", "لل", "ال", "و")
+_STEM_PREFIXES: tuple[str, ...] = ("وال", "بال", "فال", "كال", "لل", "ال")
 """Longest first; at most one is removed."""
 
-_PARTICLES = "بفكل"
-"""One-letter clitics, stripped only when the definite article follows."""
+_PARTICLES = "وبفكل"
+"""One-letter clitics, stripped only when the definite article follows: a
+bare letter is too often a radical (وحده, وقت, كتاب) to strip on its own."""
 
 _STEM_SUFFIXES: tuple[str, ...] = ("ها", "هم", "كم", "نا", "ات", "ون", "ين")
 """At most one is removed."""
@@ -196,9 +197,9 @@ def light_stem(word: str) -> str:
             stem = stem[len(prefix) :]
             break
     else:
-        # A lone particle before the article (بالله, كالله, فلله) is a clitic
-        # even when the article itself must stay for the word to keep its
-        # letters. Single letters are never stripped otherwise (كتاب ≠ تاب).
+        # A lone particle before the article (بالله, والله) is a clitic even
+        # when the article itself must stay for the word to keep its letters.
+        # Single letters are never stripped otherwise (كتاب ≠ تاب, وحده ≠ حده).
         if (
             stem[0] in _PARTICLES
             and stem[1:].startswith("ال")

@@ -16,6 +16,12 @@ Meilisearch charges a first-letter typo as two edits and, verified live on
 v1.15, does not reliably retrieve such words at all, so tolerating them here
 would only make results depend on which words the engine happened to return.
 
+Below the typo tiers sits one more: a document word whose **light stem**
+(:func:`corpus.arabic.light_stem`) equals the query word's — ``بالصبر`` for
+``الصبر``, ``المومنين`` for ``مومن``. Such matches are counted separately and
+rank after every typo match. Words the reader wrapped in quotes are *strict*:
+no typos, no stems.
+
 Everything here operates on ``corpus.arabic.normalize_for_index`` output —
 both the query and the indexed ``text_normalized`` (CLAUDE.md rule 2). The
 module is pure Python with no Django or Meilisearch imports so that it can be
@@ -29,15 +35,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
+from corpus.arabic import MIN_STEM_LETTERS, light_stem, normalize_for_index
+
 __all__ = [
     "ONE_TYPO_MIN_LETTERS",
     "PhraseMatch",
+    "QueryWord",
     "TWO_TYPOS_MIN_LETTERS",
     "edit_distance",
+    "parse_query",
     "phrase_match",
+    "stem_match",
+    "stem_words",
     "tokenize",
     "typo_budget",
     "typo_cost",
+    "word_cost",
 ]
 
 ONE_TYPO_MIN_LETTERS = 4
@@ -47,6 +60,45 @@ TWO_TYPOS_MIN_LETTERS = 8
 """Query words of this many letters or more may carry two edits."""
 
 _WORD_RE = re.compile(r"\w+")
+
+_QUOTED_RE = re.compile(r'"([^"]*)"|«([^»]*)»|“([^”]*)”')
+"""A quoted span in a raw query: ASCII, guillemets or curly double quotes.
+An unclosed quote is punctuation and is dropped by :func:`tokenize`."""
+
+
+@dataclass(frozen=True)
+class QueryWord:
+    """One query word in index form; ``strict`` words match exactly."""
+
+    text: str
+    strict: bool = False
+
+
+def parse_query(raw: str) -> list[QueryWord]:
+    """The reader's query as index-form words, quoted words marked strict.
+
+    ``الصبر "عند الصدمة"`` → ``الصبر`` (typos and stems allowed), ``عند`` and
+    ``الصدمه`` (exact). The quotes are read before normalization, which is
+    per-character and so unaffected by the split.
+    """
+    words: list[QueryWord] = []
+    last = 0
+    for match in _QUOTED_RE.finditer(raw):
+        words.extend(QueryWord(t) for t in tokenize(normalize_for_index(raw[last : match.start()])))
+        quoted = next(group for group in match.groups() if group is not None)
+        words.extend(QueryWord(t, strict=True) for t in tokenize(normalize_for_index(quoted)))
+        last = match.end()
+    words.extend(QueryWord(t) for t in tokenize(normalize_for_index(raw[last:])))
+    return words
+
+
+def stem_words(normalized: str) -> str:
+    """``normalized`` with every word light-stemmed, for the index's ``text_stem``.
+
+    No stop words are dropped: exact search is a phrase search and every
+    word, however small, keeps its slot.
+    """
+    return " ".join(light_stem(token) for token in tokenize(normalized))
 
 
 def tokenize(normalized: str) -> list[str]:
@@ -131,38 +183,77 @@ def typo_cost(query_word: str, doc_word: str) -> int | None:
     return distance if distance <= budget else None
 
 
+@lru_cache(maxsize=1 << 16)
+def stem_match(query_word: str, doc_word: str) -> bool:
+    """Whether two different words share a light stem of usable length.
+
+    ``الصبر`` / ``بالصبر`` / ``والصبر`` all stem to ``صبر``; ``الله`` and
+    ``بالله`` both to ``الله``. Equal words are the typo tier's business.
+    """
+    if query_word == doc_word:
+        return False
+    stem = light_stem(query_word)
+    return len(stem) >= MIN_STEM_LETTERS and stem == light_stem(doc_word)
+
+
+def word_cost(word: QueryWord, doc_word: str) -> tuple[int, int] | None:
+    """``(stems, typos)`` needed to read ``doc_word`` as ``word``, or ``None``.
+
+    A strict word only matches itself. Otherwise the typo tiers are tried
+    first and the stem tier only when they fail, so a stem match never hides
+    a cheaper typo match.
+    """
+    if word.strict:
+        return (0, 0) if word.text == doc_word else None
+    cost = typo_cost(word.text, doc_word)
+    if cost is not None:
+        return (0, cost)
+    if stem_match(word.text, doc_word):
+        return (1, 0)
+    return None
+
+
 @dataclass(frozen=True)
 class PhraseMatch:
-    """Where a query phrase sits in a document and how many edits it took."""
+    """Where a query phrase sits in a document and what it cost to read it there."""
 
     typos: int
     start: int
+    stems: int = 0
+    """Words matched through the stem tier only — ranked after every typo."""
+
+    @property
+    def cost(self) -> tuple[int, int]:
+        return (self.stems, self.typos)
 
 
-def phrase_match(query_tokens: Sequence[str], doc_text: str) -> PhraseMatch | None:
+def phrase_match(query_tokens: Sequence[str | QueryWord], doc_text: str) -> PhraseMatch | None:
     """Best contiguous, in-order occurrence of ``query_tokens`` in ``doc_text``.
 
     Slides a window the length of the query over the document's tokens; every
-    position must fit its word's typo budget. The window with the fewest total
-    edits wins, the earliest on a tie. ``None`` when nothing fits or the query
-    is empty.
+    position must fit its word's typo budget or share its stem (strict words
+    must be identical). The window with the fewest stem matches wins, then the
+    fewest edits, then the earliest. ``None`` when nothing fits or the query is
+    empty. Plain strings are non-strict words.
     """
     if not query_tokens:
         return None
+    words = [word if isinstance(word, QueryWord) else QueryWord(word) for word in query_tokens]
     doc_tokens = tokenize(doc_text)
-    width = len(query_tokens)
+    width = len(words)
     best: PhraseMatch | None = None
     for start in range(len(doc_tokens) - width + 1):
-        total = 0
-        for offset, word in enumerate(query_tokens):
-            cost = typo_cost(word, doc_tokens[start + offset])
+        stems = typos = 0
+        for offset, word in enumerate(words):
+            cost = word_cost(word, doc_tokens[start + offset])
             if cost is None:
                 break
-            total += cost
-            if best is not None and total >= best.typos:
+            stems += cost[0]
+            typos += cost[1]
+            if best is not None and (stems, typos) >= best.cost:
                 break
         else:
-            best = PhraseMatch(typos=total, start=start)
-            if total == 0:
+            best = PhraseMatch(typos=typos, start=start, stems=stems)
+            if stems == 0 and typos == 0:
                 break
     return best

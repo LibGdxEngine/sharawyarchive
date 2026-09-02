@@ -109,3 +109,8 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - search/smart/retrieval.py: lexical (all-stems then any-stem, ts_rank_cd), semantic (CosineDistance inside hnsw_scan: ef_search clamp + iterative_scan relaxed_order), ayah-anchored, RRF fusion (question ×2, deterministic ties); embed failure → lexical-only + warning.
 - Commands: build_passages, embed_passages (stale-only, hash-guarded, failed batches skipped and resumed, --max-cost-usd), smart_retrieve, smart_eval --stage retrieval + golden.jsonl skeleton and metrics.
 - Tests: planner/build/carry-over/correction hook, clitic recall, filters, HNSW GUCs, RRF, degraded retrieval, all four commands. Backend suite 832 passed; ruff clean. DEPLOY.md §6b has the throwaway-runner recipe for prod.
+
+## Smart search — Phase 2b exact-mode tweaks (2026-09-02)
+- Verifier gains a stem tier (light_stem equality, ≥3 letters) ranked after every typo match; quotes ("…", «…», “…”) make words strict (no typos, no stems). Contract amendment 14; الله now finds بالله (amendment 12 example flips).
+- Chunk index documents carry text_stem; searchableAttributes = [text_normalized, text_stem]; lexical_search runs a second stemmed candidate query when stemming changes an unquoted word. Prod needs one index_chunks run after deploy.
+- Stemmer: bare و no longer stripped alone (وحده stays وحده); و/ب/ف/ك/ل are clitics only before ال.

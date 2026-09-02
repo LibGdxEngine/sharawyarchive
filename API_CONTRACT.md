@@ -190,3 +190,17 @@ search 30/min anon; corrections 10/hour; clips 5/hour → 429 with `Retry-After`
     `400`; a well-formed page or juz that is past the end of the mushaf is a
     `404`, not an empty `200`. Both endpoints stay
     `public, max-age=31536000, immutable`.
+14. **Stem matches and quotes in exact search** (2026-09-02): below amendment
+    12's typo tiers, `GET /api/search/` now accepts a word whose *light stem*
+    equals the query word's — one clitic prefix (`وال بال فال كال لل ال`, or a
+    lone `و/ب/ف/ك/ل` before `ال`) and one suffix (`ها هم كم نا ات ون ين`)
+    removed, at least three letters kept. So `الصبر` finds `بالصبر` and
+    `والصبر`, `مؤمن` finds `المؤمنين`, and `الله` finds `بالله` — flipping
+    amendment 12's example. Stem matches rank **after** every exact and typo
+    match of the same query, then by Meilisearch's order; the 4/8 typo
+    thresholds and the first-letter rule are unchanged. Wrapping words in
+    quotes (`"…"`, `«…»` or `“…”`) makes them strict: no typos, no stems, so
+    `"الله"` finds only `الله`. Quotes were previously stripped and ignored.
+    `verse_matches` follows the same rules over the mushaf text. `total`
+    still counts verified chunks, now over up to two Meilisearch pools
+    (raw and stemmed words, 1000 each).

@@ -6,7 +6,8 @@ empty until the corpus jobs below run, and no endpoint exists yet.
 ## What landed
 
 - **Light stemmer** (`corpus/arabic.py`): `light_stem()` strips one clitic prefix
-  (`وال بال فال كال لل ال و`, and a lone `ب/ف/ك/ل` only when the article follows: بالله → الله) and
+  (`وال بال فال كال لل ال`, and a lone `و/ب/ف/ك/ل` only when the article follows: بالله → الله;
+  a bare letter is too often a radical — وحده, كتاب — to strip alone) and
   one suffix (`ها هم كم نا ات ون ين`), only while ≥ 3 letters remain, so كتاب stays كتاب and الله
   stays الله. `stem_text()` stems every token and drops a curated `STOP_WORDS` set (index form).
   Postgres' Snowball `arabic` was verified not to strip clitics, so the index uses the `simple`

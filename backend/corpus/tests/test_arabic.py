@@ -104,8 +104,10 @@ from corpus.arabic import STOP_WORDS, light_stem, stem_text  # noqa: E402
         ("لله", "لله"),
         ("وله", "وله"),
         ("كتاب", "كتاب"),  # a bare ك is a radical, not a clitic
+        ("وحده", "وحده"),  # so is a bare و
+        ("والله", "الله"),
         ("لطيف", "لطيف"),
-        ("وقال", "قال"),
+        ("وقال", "وقال"),  # a bare و is stripped only before ال
         ("في", "في"),
         ("255", "255"),
         ("", ""),

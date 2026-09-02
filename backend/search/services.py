@@ -38,7 +38,7 @@ from django.conf import settings
 from django.db.models import QuerySet
 from meilisearch.errors import MeilisearchApiError
 
-from corpus.arabic import normalize_for_index
+from corpus.arabic import light_stem, normalize_for_index
 from corpus.models import Chunk, SegmentKind
 from quran.models import Ayah, Surah
 
@@ -109,7 +109,13 @@ that documents holding the query words adjacent and in order fill the
 candidate pool before ones that merely contain them somewhere."""
 
 CHUNK_TEXT_ATTRIBUTES = ["text_normalized"]
-"""Chunk attributes the verifier checks — also the only searchable one."""
+"""Chunk attributes the verifier checks."""
+
+CHUNK_SEARCHABLE_ATTRIBUTES = ["text_normalized", "text_stem"]
+"""What Meilisearch matches on, in weight order. ``text_stem`` holds the
+light stem of every word (``بالصبر`` → ``صبر``) so that a stemmed query can
+reach chunks where the word only occurs with a clitic; the verifier then
+re-reads them against ``text_normalized`` and ranks such stem matches last."""
 
 AYAH_TEXT_ATTRIBUTES = ["text_normalized", "text_imlaei_normalized"]
 """The mushaf is indexed in both its Uthmani and imlaei spellings: readers type
@@ -117,7 +123,7 @@ AYAH_TEXT_ATTRIBUTES = ["text_normalized", "text_imlaei_normalized"]
 and a strict typo budget cannot bridge the second pair."""
 
 INDEX_SETTINGS: dict[str, Any] = {
-    "searchableAttributes": CHUNK_TEXT_ATTRIBUTES,
+    "searchableAttributes": CHUNK_SEARCHABLE_ATTRIBUTES,
     "filterableAttributes": ["surah", "kind", "ayah_start", "segment_id"],
     "sortableAttributes": ["surah", "start_ms"],
     "typoTolerance": TYPO_TOLERANCE,
@@ -268,6 +274,7 @@ def _document(chunk: Chunk) -> dict[str, Any]:
         "kind": segment.kind,
         "text": chunk.text,
         "text_normalized": chunk.text_normalized,
+        "text_stem": matching.stem_words(chunk.text_normalized),
         "start_ms": chunk.start_ms,
         "end_ms": chunk.end_ms,
     }
@@ -371,16 +378,19 @@ def verse_search(
     index yields an empty result, so search keeps working before
     ``manage.py index_quran`` has ever run.
     """
-    tokens = _query_tokens(query)
-    if not tokens:
+    words = matching.parse_query(query)
+    if not words:
         return []
     filters = [f"surah = {int(surah)}"] if surah is not None else []
     hits = _candidates(
-        ayahs_index_name(), tokens, filters=filters, attributes=AYAH_TEXT_ATTRIBUTES
+        ayahs_index_name(),
+        [word.text for word in words],
+        filters=filters,
+        attributes=AYAH_TEXT_ATTRIBUTES,
     )
     if hits is None:
         return []
-    return _verify(hits, tokens, attributes=AYAH_TEXT_ATTRIBUTES)[:limit]
+    return _verify(hits, words, attributes=AYAH_TEXT_ATTRIBUTES)[:limit]
 
 
 def _hydrate_verses(ayah_ids: Sequence[int]) -> list[VerseMatch]:
@@ -423,7 +433,15 @@ def _meili_filters(kind: str | None, surah: int | None) -> list[str]:
 
 def _query_tokens(query: str) -> list[str]:
     """The query as index-form words — what both stages match on."""
-    return matching.tokenize(normalize_for_index(query))
+    return [word.text for word in matching.parse_query(query)]
+
+
+def _stemmed_tokens(words: Sequence[matching.QueryWord]) -> list[str] | None:
+    """The query with every non-strict word light-stemmed, or ``None`` when
+    stemming changes nothing (then a second candidate query would only repeat
+    the first)."""
+    stemmed = [word.text if word.strict else light_stem(word.text) for word in words]
+    return stemmed if stemmed != [word.text for word in words] else None
 
 
 def _candidates(
@@ -463,25 +481,28 @@ def _candidates(
 
 
 def _verify(
-    hits: Sequence[dict[str, Any]], tokens: Sequence[str], *, attributes: Sequence[str]
+    hits: Sequence[dict[str, Any]],
+    words: Sequence[matching.QueryWord],
+    *,
+    attributes: Sequence[str],
 ) -> list[int]:
     """Ids of the ``hits`` that really contain the phrase, best first.
 
     A hit survives when :func:`search.matching.phrase_match` finds the query
     words consecutively and in order in any of its ``attributes``; survivors
-    are ordered by edits used, then by Meilisearch's own rank.
+    are ordered by stem matches used, then edits, then Meilisearch's own rank.
     """
-    survivors: list[tuple[int, int, int]] = []
+    survivors: list[tuple[int, int, int, int]] = []
     for rank, hit in enumerate(hits):
         best: matching.PhraseMatch | None = None
         for attribute in attributes:
-            match = matching.phrase_match(tokens, hit.get(attribute) or "")
-            if match is not None and (best is None or match.typos < best.typos):
+            match = matching.phrase_match(words, hit.get(attribute) or "")
+            if match is not None and (best is None or match.cost < best.cost):
                 best = match
         if best is not None:
-            survivors.append((best.typos, rank, int(hit["id"])))
+            survivors.append((best.stems, best.typos, rank, int(hit["id"])))
     survivors.sort()
-    return [document_id for _, _, document_id in survivors]
+    return [document_id for _, _, _, document_id in survivors]
 
 
 def lexical_search(
@@ -494,24 +515,35 @@ def lexical_search(
     with the count of such chunks.
 
     Stage one asks Meilisearch for up to :data:`VERIFY_POOL` candidates that
-    hold every query word; stage two keeps only those where the words are
-    consecutive, in order, and within their per-word typo budget. The count is
-    exact while the pool did not fill and a lower bound when it did. A missing
-    index yields an empty result rather than an error, so search keeps working
-    before the first pipeline run.
+    hold every query word, and — when light-stemming changes any unquoted word —
+    up to :data:`VERIFY_POOL` more for the stemmed query, which reaches the
+    ``text_stem`` attribute (``الصبر`` → ``صبر`` matches a chunk that only says
+    ``بالصبر``). Stage two keeps only those where the words are consecutive, in
+    order, and within their per-word typo budget or stem-equal; stem matches
+    rank last. The count is exact while the pools did not fill and a lower
+    bound when they did. A missing index yields an empty result rather than an
+    error, so search keeps working before the first pipeline run.
     """
-    tokens = _query_tokens(query)
-    if not tokens:
+    words = matching.parse_query(query)
+    if not words:
         return [], 0
+    filters = _meili_filters(kind, surah)
     hits = _candidates(
         chunks_index_name(),
-        tokens,
-        filters=_meili_filters(kind, surah),
+        [word.text for word in words],
+        filters=filters,
         attributes=CHUNK_TEXT_ATTRIBUTES,
     )
     if hits is None:
         return [], 0
-    ids = _verify(hits, tokens, attributes=CHUNK_TEXT_ATTRIBUTES)
+    stemmed = _stemmed_tokens(words)
+    if stemmed is not None:
+        seen = {hit["id"] for hit in hits}
+        more = _candidates(
+            chunks_index_name(), stemmed, filters=filters, attributes=CHUNK_TEXT_ATTRIBUTES
+        )
+        hits.extend(hit for hit in more or [] if hit["id"] not in seen)
+    ids = _verify(hits, words, attributes=CHUNK_TEXT_ATTRIBUTES)
     return ids, len(ids)
 
 

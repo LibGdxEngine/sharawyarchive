@@ -8,11 +8,16 @@ from corpus.arabic import normalize_for_index
 from search import matching, services
 from search.matching import (
     PhraseMatch,
+    QueryWord,
     edit_distance,
+    parse_query,
     phrase_match,
+    stem_match,
+    stem_words,
     tokenize,
     typo_budget,
     typo_cost,
+    word_cost,
 )
 
 from .conftest import KHAWATIR_TEXTS
@@ -189,3 +194,92 @@ def test_normalization_variants_cost_no_typos(query: str) -> None:
 )
 def test_snippet_ends_on_a_word_boundary(text: str, limit: int, snippet: str) -> None:
     assert services._snippet(text, limit) == snippet
+
+
+# --- Stem tier and quotes -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("query_word", "doc_word"),
+    [
+        ("الصبر", "بالصبر"),
+        ("الصبر", "والصبر"),
+        ("صبر", "الصبر"),
+        ("الله", "بالله"),
+        ("مومن", "المومنين"),
+        ("المومنين", "مومنون"),
+    ],
+)
+def test_stem_match_bridges_clitics_and_suffixes(query_word: str, doc_word: str) -> None:
+    assert stem_match(query_word, doc_word)
+    assert stem_match(doc_word, query_word)
+
+
+@pytest.mark.parametrize(
+    ("query_word", "doc_word"),
+    [
+        ("الصبر", "الصبر"),  # identical: the typo tier's business
+        ("كتاب", "تاب"),  # a bare ك is a radical, never stripped
+        ("له", "وله"),  # stems shorter than three letters do not count
+        ("عند", "عنده"),  # ه alone is not a stripped suffix
+        ("الصبر", "الصدمه"),
+    ],
+)
+def test_stem_match_is_conservative(query_word: str, doc_word: str) -> None:
+    assert not stem_match(query_word, doc_word)
+
+
+def test_word_cost_tries_typos_before_stems_and_honours_strict() -> None:
+    assert word_cost(QueryWord("الصبر"), "الصبر") == (0, 0)
+    assert word_cost(QueryWord("الصبر"), "الصبن") == (0, 1)
+    assert word_cost(QueryWord("الصبر"), "بالصبر") == (1, 0)
+    assert word_cost(QueryWord("الصبر"), "الصدمه") is None
+    assert word_cost(QueryWord("الصبر", strict=True), "الصبر") == (0, 0)
+    assert word_cost(QueryWord("الصبر", strict=True), "الصبن") is None
+    assert word_cost(QueryWord("الصبر", strict=True), "بالصبر") is None
+
+
+def test_phrase_match_reports_stem_matches_separately() -> None:
+    assert phrase_match(["الصبر"], IMAN) is None
+    assert phrase_match(["الله"], IMAN) == PhraseMatch(typos=0, start=1, stems=1)
+    assert phrase_match(["الايمان", "الله"], IMAN) == PhraseMatch(typos=0, start=0, stems=1)
+    assert phrase_match([QueryWord("الله", strict=True)], IMAN) is None
+
+
+def test_phrase_match_prefers_fewer_stems_over_fewer_typos() -> None:
+    doc = "بالصبر عند الصدمه ثم الصبن عند الصدمه"
+    match = phrase_match(["الصبر", "عند", "الصدمه"], doc)
+    assert match == PhraseMatch(typos=1, start=4, stems=0)
+    assert match.cost == (0, 1)
+
+
+def test_stem_words_stems_every_word_and_keeps_stop_words() -> None:
+    assert stem_words(IMAN) == "ايمان الله وحده لا شريك له"
+    assert stem_words("والله وحده") == "الله وحده"
+    assert stem_words("والصبر عند الصدمه") == "صبر عند صدمه"
+    assert stem_words("") == ""
+
+
+@pytest.mark.parametrize(
+    ("raw", "words"),
+    [
+        ("الصبر عند الصدمة", [QueryWord("الصبر"), QueryWord("عند"), QueryWord("الصدمه")]),
+        (
+            'الصبر "عند الصدمة" الأولى',
+            [
+                QueryWord("الصبر"),
+                QueryWord("عند", strict=True),
+                QueryWord("الصدمه", strict=True),
+                QueryWord("الاولي"),
+            ],
+        ),
+        ("«الله» نور", [QueryWord("الله", strict=True), QueryWord("نور")]),
+        ("“الله” نور", [QueryWord("الله", strict=True), QueryWord("نور")]),
+        ('"الله', [QueryWord("الله")]),  # unclosed: the quote is punctuation
+        ('""', []),
+        ("", []),
+    ],
+)
+def test_parse_query_marks_quoted_words_strict(raw: str, words: list[QueryWord]) -> None:
+    assert parse_query(raw) == words
+

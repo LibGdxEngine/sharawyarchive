@@ -42,7 +42,9 @@ class PassageCorpus:
         return self.khawatir + self.recitation
 
     def holding(self, word: str) -> list[Passage]:
-        return [row for row in self.all if word in row.text_normalized.split()]
+        """Passages whose stemmed text holds the stem of ``word``."""
+        stem = stem_text(normalize_for_index(word))
+        return [row for row in self.all if stem in stem_text(row.text_normalized).split()]
 
 
 def make_passage(

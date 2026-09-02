@@ -25,6 +25,7 @@ GAPPED = KHAWATIR_TEXTS[6]  # الصَّبْرُ الْجَمِيلُ، عِنْ
 REVERSED = KHAWATIR_TEXTS[7]  # عِنْدَ الصَّدْمَةِ الصَّبْرُ
 MUMINUN = KHAWATIR_TEXTS[8]  # الْمُؤْمِنُونَ إِخْوَةٌ
 LONG = KHAWATIR_TEXTS[11]  # longer than a suggestion snippet
+CLITIC = KHAWATIR_TEXTS[12]  # تَحَلَّوْا بِالصَّبْرِ ... — الصبر only behind a clitic
 
 
 def _ids(query: str, **kwargs: object) -> list[int]:
@@ -34,7 +35,7 @@ def _ids(query: str, **kwargs: object) -> list[int]:
 
 def test_ensure_chunks_index_configures_the_attributes(chunks_index: str) -> None:
     settings = services.meili_client().index(chunks_index).get_settings()
-    assert settings["searchableAttributes"] == ["text_normalized"]
+    assert settings["searchableAttributes"] == ["text_normalized", "text_stem"]
     assert sorted(settings["filterableAttributes"]) == [
         "ayah_start",
         "kind",
@@ -57,7 +58,7 @@ def test_ensure_ayahs_index_configures_both_spellings_and_strictness(ayahs_index
 def test_ensure_chunks_index_is_idempotent(chunks_index: str) -> None:
     services.ensure_chunks_index()
     settings = services.meili_client().index(chunks_index).get_settings()
-    assert settings["searchableAttributes"] == ["text_normalized"]
+    assert settings["searchableAttributes"] == ["text_normalized", "text_stem"]
 
 
 def test_index_chunks_stores_the_document_shape(
@@ -69,6 +70,7 @@ def test_index_chunks_stores_the_document_shape(
     document = services.meili_client().index(chunks_index).get_document(chunk.pk)
     assert document.text == IMAN  # display text keeps its diacritics
     assert document.text_normalized == chunk.text_normalized
+    assert document.text_stem == "ايمان الله وحده لا شريك له"
     assert document.segment_id == corpus.khawatir.pk
     assert document.segment_title == "خواطر البقرة"
     assert (document.surah, document.ayah_start, document.ayah_end) == (2, 1, 10)
@@ -292,17 +294,53 @@ def test_prefix_of_the_last_word_beyond_budget_is_rejected(
     assert _ids("الص") == []
 
 
-def test_clitic_prefixes_are_different_words(indexed_corpus: CorpusFixture) -> None:
-    """``الله`` is not ``بالله``: exact words, and the extra letter is a
-    first-letter change."""
-    assert _ids("الله") == []
-    assert _ids("بالله") == [indexed_corpus.chunk_for(IMAN).pk]
+def test_clitic_prefixes_match_through_the_stem_tier(indexed_corpus: CorpusFixture) -> None:
+    """``الله`` reaches ``بالله`` (same light stem) even though the typo tier
+    would call the extra letter a first-letter change; the reverse holds too."""
+    iman = indexed_corpus.chunk_for(IMAN).pk
+    assert _ids("الله") == [iman]
+    assert _ids("بالله") == [iman]
+    assert _ids("الايمان الله") == [iman]
+
+
+def test_a_stemmed_query_reaches_a_chunk_meilisearch_would_not_return(
+    indexed_corpus: CorpusFixture,
+) -> None:
+    """``بالصبر`` is one word to Meilisearch, so ``الصبر`` alone never retrieved
+    it; the stemmed second query matches ``text_stem`` and the verifier
+    accepts the stem match — after every exact hit."""
+    sabr, gapped, reversed_, clitic = (
+        indexed_corpus.chunk_for(text).pk for text in (SABR, GAPPED, REVERSED, CLITIC)
+    )
+    ids = _ids("الصبر")
+    assert ids[-1] == clitic
+    assert set(ids[:-1]) == {sabr, gapped, reversed_}
+    assert _ids("صبر")[-1] == clitic and len(_ids("صبر")) == 4
+    assert _ids("تحلوا الصبر") == [clitic]
+
+
+def test_quoted_words_are_exact(indexed_corpus: CorpusFixture) -> None:
+    assert _ids('"الله"') == []  # no stem tier
+    assert _ids('"بالله"') == [indexed_corpus.chunk_for(IMAN).pk]
+    assert _ids('"الصبن" عند الصدمة') == []  # no typos inside the quotes
+    assert _ids('الصبن "عند الصدمة"') == [indexed_corpus.chunk_for(SABR).pk]
+    assert _ids('«الصبر عند الصدمة»') == [indexed_corpus.chunk_for(SABR).pk]
 
 
 def test_exact_matches_rank_above_typo_matches(indexed_corpus: CorpusFixture) -> None:
     rahma, muminun = (indexed_corpus.chunk_for(text).pk for text in (RAHMA, MUMINUN))
     assert _ids("المؤمنين") == [rahma, muminun]
     assert _ids("المؤمنون") == [muminun, rahma]
+
+
+def test_typo_matches_rank_above_stem_matches(indexed_corpus: CorpusFixture) -> None:
+    """``مؤمن`` is a typo-free stem of both chunks' word and a one-edit typo of
+    neither, so both come through the stem tier; ``المؤمنين`` is exact in one
+    and a typo in the other, so the stem tier is never needed."""
+    rahma, muminun = (indexed_corpus.chunk_for(text).pk for text in (RAHMA, MUMINUN))
+    assert set(_ids("قلوب مؤمن")) == {rahma}
+    assert set(_ids("مؤمن")) == {rahma, muminun}
+    assert _ids("المؤمنين") == [rahma, muminun]
 
 
 def test_verse_search_is_strict_and_accepts_imlaei_spelling(

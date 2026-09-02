@@ -115,8 +115,10 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 ```
 
 Migrations run on container start. Meilisearch reindexing is only needed when
-chunk data changes or the search volume is rebuilt:
-`python manage.py index_chunks` (idempotent upsert of every chunk row).
+chunk data changes, the search volume is rebuilt, or the chunk document shape
+changes (as with the `text_stem` attribute of 2026-09-02): `python manage.py
+index_chunks` (idempotent upsert of every chunk row; it reapplies the index
+settings first).
 
 ## 6b. Smart-search passages (build and embed)
 

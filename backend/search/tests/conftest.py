@@ -43,6 +43,7 @@ KHAWATIR_TEXTS: list[str] = [
     # 11: longer than a suggestion snippet, and its 80th character falls
     # inside a word (asserted in the round-trip test).
     "إِنَّ الرِّزْقَ مَقْسُومٌ وَالْأَجَلَ مَحْتُومٌ وَالْعَبْدُ مَأْمُورٌ بِالسَّعْيِ لَا بِالْقَلَقِ عَلَى مَا قُدِّرَ لَهُ",
+    "تَحَلَّوْا بِالصَّبْرِ فَإِنَّ الْفَرَجَ قَرِيبٌ",  # 12: الصبر only behind a clitic (stem tier)
 ]
 
 RECITATION_TEXTS: list[str] = [

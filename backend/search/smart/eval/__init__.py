@@ -90,6 +90,9 @@ class RetrievalResult:
     id: str
     ranked_segment_ids: list[int] = field(default_factory=list)
     hit_rank: int | None = None
+    retrieval_hit_rank: int | None = None
+    """Where retrieval alone placed the segment (equals ``hit_rank`` for that stage)."""
+    weak_evidence: bool = False
     latency_ms: int = 0
     cost_usd: str = "0"
     error: str = ""

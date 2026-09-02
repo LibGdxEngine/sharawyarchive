@@ -114,3 +114,9 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - Verifier gains a stem tier (light_stem equality, ≥3 letters) ranked after every typo match; quotes ("…", «…», “…”) make words strict (no typos, no stems). Contract amendment 14; الله now finds بالله (amendment 12 example flips).
 - Chunk index documents carry text_stem; searchableAttributes = [text_normalized, text_stem]; lexical_search runs a second stemmed candidate query when stemming changes an unquoted word. Prod needs one index_chunks run after deploy.
 - Stemmer: bare و no longer stripped alone (وحده stays وحده); و/ب/ف/ك/ل are clitics only before ال.
+
+## Smart search — Phase 3 plan/rerank/context (2026-09-02)
+- planner.py: QueryPlan via strict schema, tidied (dedupe rewrites, cap keywords, ayah refs validated against quran.Ayah, surah hint bounded); any LLMError → naive plan + warning.
+- rerank.py: Reranker protocol, LLMListwiseReranker (batches of 20 in 2 threads, keep score ≥2, top 8, weak-evidence fallback to fused top 3, failure → fused order, <20 s budget → skipped), NoopReranker.
+- context.py: seed ±1 passage, per-transcript merge, text rebuilt from chunks, 450-word window trim around the seed, 3,600-word budget spent in rerank order, corpus-ordered p1..pN; render() with normalize_light text.
+- smart_eval --stage rerank (recall@8, retrieval_hit_rank, weak_evidence count). Backend suite 883 passed; ruff clean.

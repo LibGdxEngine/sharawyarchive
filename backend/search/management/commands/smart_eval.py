@@ -1,8 +1,10 @@
-"""``manage.py smart_eval --stage retrieval`` — score retrieval against the golden set.
+"""``manage.py smart_eval --stage retrieval|rerank`` — score against the golden set.
 
-Later phases add ``rerank`` and ``full``; asking for them now fails loudly.
-Reports are JSON with ids and numbers only (no passage text), meant to be
-committed under ``docs/smart-search/eval-<date>.json``.
+``retrieval`` measures where the expected segment first appears in the fused
+candidate list (recall@k, MRR); ``rerank`` runs the reranker on top and
+measures the same over what the generator would read (recall@8). ``full``
+arrives with a later phase. Reports are JSON with ids and numbers only (no
+passage text), meant to be committed under ``docs/smart-search/eval-<date>.json``.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from search.models import Passage
-from search.smart import retrieval
+from search.smart import rerank, retrieval
 from search.smart.eval import GOLDEN_PATH, GoldenError, RetrievalResult, load_golden
 from search.smart.eval import metrics as m
 
@@ -33,6 +35,19 @@ def _git_sha() -> str:
         return ""
 
 
+def _segments_of(passage_ids: list[int]) -> list[int]:
+    """Segment ids behind ``passage_ids`` in the same order, each once."""
+    segment_of = dict(
+        Passage.objects.filter(pk__in=passage_ids).values_list("pk", "segment_id")
+    )
+    ranked: list[int] = []
+    for passage_id in passage_ids:
+        segment_id = segment_of.get(passage_id)
+        if segment_id is not None and segment_id not in ranked:
+            ranked.append(segment_id)
+    return ranked
+
+
 class Command(BaseCommand):
     help = "Evaluate smart search against search/smart/eval/golden.jsonl."
 
@@ -42,11 +57,14 @@ class Command(BaseCommand):
         parser.add_argument("--limit", type=int)
         parser.add_argument("--out", type=Path, help="write the JSON report here")
         parser.add_argument("-k", type=int, default=retrieval.FUSED_LIMIT)
-        parser.add_argument("--no-llm", action="store_true", help="lexical retrieval only")
+        parser.add_argument(
+            "--no-llm", action="store_true", help="lexical retrieval only, fused order for rerank"
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        if options["stage"] != "retrieval":
-            raise CommandError(f"--stage {options['stage']} arrives with a later phase")
+        stage = options["stage"]
+        if stage == "full":
+            raise CommandError("--stage full arrives with a later phase")
         try:
             items = load_golden(options["golden"])
         except (OSError, GoldenError) as error:
@@ -57,29 +75,31 @@ class Command(BaseCommand):
         if not labelled:
             raise CommandError("no labelled items (every item lacks expected_segment_ids)")
 
-        k = options["k"]
+        k = options["k"] if stage == "retrieval" else rerank.TOP_N
+        use_llm = not options["no_llm"]
+        reranker: rerank.Reranker = (
+            rerank.LLMListwiseReranker() if use_llm else rerank.NoopReranker()
+        )
         results: list[RetrievalResult] = []
         for item in labelled:
             started = time.monotonic()
             result = RetrievalResult(id=item.id)
             try:
-                found = retrieval.retrieve(
-                    item.question, None, use_llm=not options["no_llm"], limit=k
-                )
-                segment_of = dict(
-                    Passage.objects.filter(
-                        pk__in=[candidate.passage_id for candidate in found.candidates]
-                    ).values_list("pk", "segment_id")
-                )
-                ranked: list[int] = []
-                for candidate in found.candidates:
-                    segment_id = segment_of.get(candidate.passage_id)
-                    if segment_id is not None and segment_id not in ranked:
-                        ranked.append(segment_id)
+                found = retrieval.retrieve(item.question, None, use_llm=use_llm)
+                cost = found.usage.cost_usd if found.usage else None
+                ranked = _segments_of([candidate.passage_id for candidate in found.candidates])
+                result.retrieval_hit_rank = m.first_hit_rank(ranked, item.expected_segment_ids)
+                if stage == "rerank":
+                    outcome = reranker.rerank(item.question, found.candidates)
+                    ranked = _segments_of([row.passage_id for row in outcome.passages])
+                    for usage in outcome.usage:
+                        if usage.cost_usd is not None:
+                            cost = (cost or Decimal("0")) + usage.cost_usd
+                    result.weak_evidence = outcome.weak_evidence
                 result.ranked_segment_ids = ranked
                 result.hit_rank = m.first_hit_rank(ranked, item.expected_segment_ids)
-                if found.usage and found.usage.cost_usd is not None:
-                    result.cost_usd = str(found.usage.cost_usd)
+                if cost is not None:
+                    result.cost_usd = str(cost)
             except Exception as error:  # noqa: BLE001 — one bad item must not sink the report
                 result.error = f"{type(error).__name__}: {error}"
             result.latency_ms = int((time.monotonic() - started) * 1000)
@@ -90,31 +110,37 @@ class Command(BaseCommand):
         )
         mrr = m.mean([0.0 if r.hit_rank is None else 1.0 / r.hit_rank for r in results])
         latencies = [float(r.latency_ms) for r in results]
+        summary: dict[str, Any] = {
+            f"recall_at_{k}": round(recall, 4),
+            "mrr": round(mrr, 4),
+            "latency_ms": {
+                "p50": m.percentile(latencies, 50),
+                "p95": m.percentile(latencies, 95),
+            },
+            "cost_usd": str(sum(Decimal(r.cost_usd) for r in results)),
+            "errors": sum(1 for r in results if r.error),
+        }
+        if stage == "rerank":
+            summary["weak_evidence"] = sum(1 for r in results if r.weak_evidence)
         report = {
             "run": {
                 "date": datetime.now(UTC).isoformat(timespec="seconds"),
                 "git_sha": _git_sha(),
-                "stage": "retrieval",
+                "stage": stage,
                 "k": k,
-                "llm": not options["no_llm"],
+                "llm": use_llm,
                 "embedding_model": settings.SMART_EMBEDDING_MODEL,
+                "rerank_model": settings.SMART_RERANK_MODEL if stage == "rerank" else None,
                 "n": len(results),
             },
-            "summary": {
-                f"recall_at_{k}": round(recall, 4),
-                "mrr": round(mrr, 4),
-                "latency_ms": {
-                    "p50": m.percentile(latencies, 50),
-                    "p95": m.percentile(latencies, 95),
-                },
-                "cost_usd": str(sum(Decimal(r.cost_usd) for r in results)),
-                "errors": sum(1 for r in results if r.error),
-            },
+            "summary": summary,
             "items": [
                 {
                     "id": r.id,
                     "hit_rank": r.hit_rank,
+                    "retrieval_hit_rank": r.retrieval_hit_rank,
                     "ranked_segment_ids": r.ranked_segment_ids[:k],
+                    "weak_evidence": r.weak_evidence,
                     "latency_ms": r.latency_ms,
                     "error": r.error,
                 }
@@ -126,7 +152,6 @@ class Command(BaseCommand):
                 json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8"
             )
         self.stdout.write(
-            f"retrieval: n={len(results)} recall@{k}={recall:.3f} mrr={mrr:.3f} "
-            f"p95={report['summary']['latency_ms']['p95']:.0f}ms "
-            f"errors={report['summary']['errors']}"
+            f"{stage}: n={len(results)} recall@{k}={recall:.3f} mrr={mrr:.3f} "
+            f"p95={summary['latency_ms']['p95']:.0f}ms errors={summary['errors']}"
         )

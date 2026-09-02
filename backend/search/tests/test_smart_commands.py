@@ -284,6 +284,45 @@ def test_smart_eval_scores_retrieval_against_a_golden_file(
     assert "text" not in json.dumps(report["items"])
 
 
+def test_smart_eval_rerank_stage_scores_what_the_generator_would_read(
+    built: int, corpus: CorpusFixture, tmp_path: Path
+) -> None:
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text(
+        json.dumps(
+            {
+                "id": "hit",
+                "question": "الصبر عند الصدمة الأولى",
+                "expected_segment_ids": [corpus.khawatir.pk],
+                "expected_status": "answered",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "report.json"
+
+    out, _ = _run(
+        "smart_eval",
+        "--stage",
+        "rerank",
+        "--no-llm",
+        "--golden",
+        str(golden),
+        "--out",
+        str(report_path),
+    )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["run"]["stage"] == "rerank" and report["run"]["k"] == 8
+    assert report["run"]["rerank_model"] == "test/rerank"
+    assert report["summary"]["recall_at_8"] == 1.0 and report["summary"]["weak_evidence"] == 0
+    (item,) = report["items"]
+    assert item["hit_rank"] == 1 and item["retrieval_hit_rank"] == 1
+    assert "rerank: n=1 recall@8=1.000" in out
+
+
 def test_smart_eval_refuses_later_stages_and_unlabelled_sets(built: int, tmp_path: Path) -> None:
     with pytest.raises(CommandError, match="later phase"):
         _run("smart_eval", "--stage", "full")

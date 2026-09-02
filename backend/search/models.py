@@ -1,9 +1,10 @@
 """Models of the search app.
 
 Exact search («بحث دقيق») keeps its state in Meilisearch and needs no rows here.
-Smart search («بحث ذكي») records every request as a :class:`SmartQuery`: it is
-the observability layer for v1 (cost, latency, statuses, feedback) and the
-audit trail behind every answer the archive has shown.
+Smart search («بحث ذكي») adds two tables: :class:`Passage`, the retrieval unit
+(a window of consecutive chunks with a text-search vector and an embedding),
+and :class:`SmartQuery`, one row per request — the observability layer for v1
+(cost, latency, statuses, feedback) and the audit trail behind every answer.
 """
 
 from __future__ import annotations
@@ -12,7 +13,10 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.db import models
+from pgvector.django import HalfVectorField, HnswIndex
 
 
 class SmartStatus(models.TextChoices):
@@ -88,3 +92,75 @@ class SmartQuery(models.Model):
     def total_latency_ms(self) -> int | None:
         value = (self.latency_ms or {}).get("total")
         return int(value) if value is not None else None
+
+
+EMBEDDING_DIMENSIONS = 1024
+"""Width of the ``halfvec`` column. Changing it is a migration and a full re-embed."""
+
+
+class Passage(models.Model):
+    """The smart-search retrieval unit: ~150-300 words of consecutive chunks.
+
+    Built by :mod:`search.smart.passages` over the existing :class:`corpus.Chunk`
+    rows (which stay the unit of exact search, corrections and clips), with a
+    one-chunk overlap between neighbours. ``text`` is the display text;
+    ``text_normalized`` the comparison form (CLAUDE.md rule 2); ``text_stem``
+    the lexical-index form (light-stemmed, stop words removed) behind the
+    generated ``tsv`` column. ``content_hash`` makes rebuilding idempotent and
+    ``embedded_hash`` tells whether the stored vector still matches the text.
+    """
+
+    transcript = models.ForeignKey(
+        "corpus.Transcript", on_delete=models.CASCADE, related_name="passages"
+    )
+    segment = models.ForeignKey("corpus.Segment", on_delete=models.CASCADE, related_name="passages")
+    surah = models.PositiveSmallIntegerField(null=True, blank=True)
+    ayah_start = models.PositiveSmallIntegerField(null=True, blank=True)
+    ayah_end = models.PositiveSmallIntegerField(null=True, blank=True)
+    ordinal = models.PositiveIntegerField()
+    chunk_idx_start = models.PositiveIntegerField()
+    chunk_idx_end = models.PositiveIntegerField()
+    start_ms = models.PositiveBigIntegerField()
+    end_ms = models.PositiveBigIntegerField()
+    word_count = models.PositiveIntegerField()
+    header = models.CharField(max_length=300)
+    text = models.TextField()
+    text_normalized = models.TextField()
+    text_stem = models.TextField()
+    tsv = models.GeneratedField(
+        expression=SearchVector("text_stem", config="simple"),
+        output_field=SearchVectorField(),
+        db_persist=True,
+    )
+    content_hash = models.CharField(max_length=64, db_index=True)
+    embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True, blank=True)
+    embedding_model = models.CharField(max_length=100, blank=True)
+    embedded_hash = models.CharField(max_length=64, blank=True)
+    embedded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["transcript_id", "ordinal"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["transcript", "ordinal"], name="passage_unique_transcript_ordinal"
+            ),
+        ]
+        indexes = [
+            GinIndex(fields=["tsv"], name="passage_tsv_gin"),
+            HnswIndex(
+                name="passage_embedding_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["halfvec_cosine_ops"],
+            ),
+            models.Index(fields=["segment", "ordinal"], name="passage_segment_ordinal_idx"),
+            models.Index(fields=["surah", "ayah_start"], name="passage_surah_ayah_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"passage {self.ordinal} of transcript {self.transcript_id}"
+
+    @property
+    def is_embedded(self) -> bool:
+        return self.embedding is not None and self.embedded_hash == self.content_hash

@@ -118,6 +118,30 @@ Migrations run on container start. Meilisearch reindexing is only needed when
 chunk data changes or the search volume is rebuilt:
 `python manage.py index_chunks` (idempotent upsert of every chunk row).
 
+## 6b. Smart-search passages (build and embed)
+
+Smart search (`docs/smart-search/`) retrieves over `search.Passage` rows built from
+the chunks and embedded through OpenRouter. Both jobs are idempotent: rebuild
+skips transcripts whose passages hash the same, and embedding only touches rows
+whose vector is missing or stale. Run them after the first deploy of Phase 2,
+after importing a database dump, and after any bulk chunk change (an approved
+correction refreshes its own passages automatically). Use a throwaway
+container, never `compose up`:
+
+```bash
+docker run --rm --network sharawyarchive_default --env-file .env.prod --memory=2g \
+  -e DJANGO_SETTINGS_MODULE=core.settings.prod -e DB_HOST=db \
+  -e CACHE_REDIS_URL=redis://redis:6379/2 -e MEILI_URL=http://meilisearch:7700 \
+  --entrypoint python sharawyarchive-backend manage.py build_passages
+# then, with OPENROUTER_API_KEY in .env.prod (≈ $0.15 for the whole corpus):
+docker run --rm ... --entrypoint python sharawyarchive-backend manage.py embed_passages --dry-run
+docker run --rm ... --entrypoint python sharawyarchive-backend manage.py embed_passages --max-cost-usd 1
+```
+
+`embed_passages` prints tokens and cost per 20 batches and stops at `--max-cost-usd`;
+re-running continues where it stopped. Check the result with
+`manage.py smart_retrieve "<question>" --json`.
+
 ## 6a. Clips (rendering and downloads)
 
 Two things outside the Django settings have to be true, or clips break in ways

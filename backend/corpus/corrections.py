@@ -290,6 +290,15 @@ def _reindex(chunk_ids: Sequence[int]) -> None:
     services.index_chunks(Chunk.objects.filter(pk__in=chunk_ids))
 
 
+def _refresh_passages(chunk_ids: Sequence[int]) -> None:
+    """Rebuild the smart-search passages covering the corrected chunks — their
+    text and hash change with the words, so the next embedding run re-embeds
+    exactly those. Late import for the same reason as :func:`_reindex`."""
+    from search.smart.passages import refresh_for_chunks
+
+    refresh_for_chunks(chunk_ids)
+
+
 def _validate(correction: Correction, new_texts: Sequence[str]) -> list[TranscriptWord]:
     if correction.status != CorrectionStatus.PENDING:
         raise CorrectionError(f"correction {correction.pk} is already {correction.status}")
@@ -348,6 +357,7 @@ def approve(correction: Correction, *, reviewed_by: str = "") -> ApprovalResult:
     chunk_ids = tuple(chunk.pk for chunk in chunks)
     if chunk_ids:
         transaction.on_commit(lambda: _reindex(chunk_ids))
+        transaction.on_commit(lambda: _refresh_passages(chunk_ids))
     result = ApprovalResult(
         correction_id=correction.pk,
         transcript_id=transcript.pk,

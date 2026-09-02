@@ -102,3 +102,10 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - backend/search/smart/: schemas (strict JSON schema helper), llm (OpenRouter via openai SDK, tenacity retries, Deadline, usage/cost, budget check, Matryoshka truncation), prompts v1, cache (keys carry prompt version + embedding tag; daily-salted ip_hash), budget (micro-USD spend counter; in-flight ZSET lease via Lua). SmartQuery model = search app's first migration; read-only admin.
 - Live smoke test with the real key: OpenRouter forwards dimensions=1024 for qwen/qwen3-embedding-8b (4096 native); gemini-3.1-flash-lite honours strict json_schema + require_parameters (planner: 1066/153 tokens, $0.0005, 1.7 s).
 - Tests fake the provider with respx; search+api suites green (217) in the throwaway docker network; ruff clean.
+
+## Smart search — Phase 2 retrieval (2026-09-02)
+- corpus.arabic gains light_stem()/stem_text()/STOP_WORDS (one clitic prefix + one suffix, ≥3 letters kept; lone ب/ف/ك/ل only before ال). Postgres Snowball arabic verified useless for clitics → `simple` config over our stems.
+- search.Passage (migration 0002): 150–300-word windows over consecutive chunks (widest-gap cut, one-chunk overlap, tail fold), header + text + text_stem, persisted tsvector GeneratedField + GIN, halfvec(1024) + HNSW cosine, content/embedded hashes for idempotency. Chunk untouched. corrections.approve() now also refreshes the covering passages on commit.
+- search/smart/retrieval.py: lexical (all-stems then any-stem, ts_rank_cd), semantic (CosineDistance inside hnsw_scan: ef_search clamp + iterative_scan relaxed_order), ayah-anchored, RRF fusion (question ×2, deterministic ties); embed failure → lexical-only + warning.
+- Commands: build_passages, embed_passages (stale-only, hash-guarded, failed batches skipped and resumed, --max-cost-usd), smart_retrieve, smart_eval --stage retrieval + golden.jsonl skeleton and metrics.
+- Tests: planner/build/carry-over/correction hook, clitic recall, filters, HNSW GUCs, RRF, degraded retrieval, all four commands. Backend suite 832 passed; ruff clean. DEPLOY.md §6b has the throwaway-runner recipe for prod.

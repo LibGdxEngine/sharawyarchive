@@ -1,0 +1,6 @@
+# One JSON object per line. expected_segment_ids are corpus Segment ids (label them with
+# `manage.py smart_label "<question>"`); an abstention item has expected_status "not_found"
+# and no ids. Lines starting with # are ignored.
+{"id": "g001", "question": "ما رأي الشيخ الشعراوي في قضية نجاة والدي النبي", "expected_segment_ids": [], "expected_status": "not_found", "tags": ["opinion", "unlabelled"], "notes": "PLACEHOLDER — label with smart_label, then set expected_status to answered/partial"}
+{"id": "g002", "question": "ماذا قال الشيخ في تفسير قوله تعالى وما كنا معذبين حتى نبعث رسولا", "expected_segment_ids": [], "expected_status": "not_found", "tags": ["tafseer", "ayah", "unlabelled"], "notes": "PLACEHOLDER — surah 17 ayah 15; label with smart_label"}
+{"id": "g003", "question": "ما حكم الزواج المدني في فرنسا عند الشيخ الشعراوي", "expected_segment_ids": [], "expected_status": "not_found", "tags": ["abstain"], "notes": "off-corpus: the pipeline must abstain"}

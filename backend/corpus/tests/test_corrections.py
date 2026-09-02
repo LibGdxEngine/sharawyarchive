@@ -231,7 +231,9 @@ def test_the_index_is_untouched_before_the_transaction_commits(
         index = services.meili_client().index(services.chunks_index_name())
         assert index.get_document(chunk.pk).text == chunk.text
 
-    assert len(callbacks) == 1
+    # One callback reindexes Meilisearch, the other rebuilds the smart-search
+    # passages over the corrected chunks; neither has run yet.
+    assert len(callbacks) == 2
 
 
 # --- Rejection and refusals --------------------------------------------------

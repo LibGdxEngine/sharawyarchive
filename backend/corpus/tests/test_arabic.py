@@ -79,3 +79,63 @@ def test_light_preserves_letter_identity() -> None:
 
 def test_light_preserves_whitespace_layout() -> None:
     assert normalize_light("  a\t\nb  ") == "  a\t\nb  "
+
+
+# --- light_stem / stem_text ----------------------------------------------------
+
+from corpus.arabic import STOP_WORDS, light_stem, stem_text  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("word", "stem"),
+    [
+        ("الصبر", "صبر"),
+        ("بالصبر", "صبر"),
+        ("والصبر", "صبر"),
+        ("فالصبر", "صبر"),
+        ("كالصبر", "صبر"),
+        ("للمومنين", "مومن"),
+        ("المومنين", "مومن"),
+        ("والمومنين", "مومن"),
+        ("صابرين", "صابر"),
+        ("كتابهم", "كتاب"),
+        ("الله", "الله"),  # stripping ال would leave two letters
+        ("بالله", "الله"),
+        ("لله", "لله"),
+        ("وله", "وله"),
+        ("كتاب", "كتاب"),  # a bare ك is a radical, not a clitic
+        ("لطيف", "لطيف"),
+        ("وقال", "قال"),
+        ("في", "في"),
+        ("255", "255"),
+        ("", ""),
+    ],
+)
+def test_light_stem_strips_one_clitic_and_one_suffix_conservatively(word: str, stem: str) -> None:
+    assert light_stem(word) == stem
+
+
+def test_light_stem_is_idempotent() -> None:
+    for word in ("والمومنين", "بالصبر", "كتابهم", "الله"):
+        assert light_stem(light_stem(word)) == light_stem(word)
+
+
+def test_light_stem_never_strips_below_three_letters() -> None:
+    for word in ("وله", "بها", "الي", "ولد", "بيت"):
+        assert len(light_stem(word)) >= 3 or light_stem(word) == word
+
+
+def test_stem_text_drops_stop_words_and_stems_the_rest() -> None:
+    normalized = normalize_for_index("والصبر عند الصدمة الأولى في قلوب المؤمنين")
+
+    # عند is a stop word; ى normalises to ي before stemming.
+    assert stem_text(normalized) == "صبر صدمه اولي قلوب مومن"
+
+
+def test_stem_text_drops_stop_words_hidden_behind_a_clitic() -> None:
+    assert stem_text("والذي فيها") == ""
+    assert "الذي" in STOP_WORDS and "علي" in STOP_WORDS
+
+
+def test_stop_words_are_in_index_form() -> None:
+    assert all(normalize_for_index(word) == word for word in STOP_WORDS)

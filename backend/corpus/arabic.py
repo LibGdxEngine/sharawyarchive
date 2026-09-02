@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import unicodedata
 
-__all__ = ["normalize_for_index", "normalize_light"]
+__all__ = ["STOP_WORDS", "light_stem", "normalize_for_index", "normalize_light", "stem_text"]
 
 # --- Step 2/3: codepoints removed outright -----------------------------------
 
@@ -138,3 +138,93 @@ def normalize_for_index(s: str) -> str:
     """
     folded = unicodedata.normalize("NFC", s).translate(_INDEX_TABLE)
     return " ".join(folded.split())
+
+
+# --- Light stemming (search recall only, never display) ----------------------
+#
+# A conservative, Light10-style stemmer for tokens that already went through
+# ``normalize_for_index``. It strips at most one clitic prefix and one suffix,
+# and only when at least three letters remain, so ``الله`` stays ``الله``
+# (stripping ``ال`` would leave two letters) while ``بالله`` becomes ``الله``.
+#
+# Single-letter prefixes other than the conjunction ``و`` are deliberately NOT
+# stripped on their own: ``ب``/``ك``/``ل``/``ف`` are as often the first radical
+# of the word as a clitic (``كتاب`` → ``تاب``, ``لطيف`` → ``طيف``), and a false
+# stem is a false match wherever stems are compared. They are stripped only
+# together with the article (``بال``, ``كال``, ``فال``, ``لل``).
+
+_STEM_PREFIXES: tuple[str, ...] = ("وال", "بال", "فال", "كال", "لل", "ال", "و")
+"""Longest first; at most one is removed."""
+
+_PARTICLES = "بفكل"
+"""One-letter clitics, stripped only when the definite article follows."""
+
+_STEM_SUFFIXES: tuple[str, ...] = ("ها", "هم", "كم", "نا", "ات", "ون", "ين")
+"""At most one is removed."""
+
+MIN_STEM_LETTERS = 3
+"""A prefix or suffix is only stripped when this many letters remain."""
+
+STOP_WORDS: frozenset[str] = frozenset(
+    """
+    في من علي الي عن ان ما لا هذا هذه ذلك تلك الذي التي الذين كان كانت يكون قد ثم او
+    يا هو هي هم انا انت نحن انتم له لها لهم به بها بهم فيه فيها منه منها عليه عليها
+    الا اذا لم لن كل بعد قبل عند مع حتي بل لكن ولكن اي ايضا هناك هنا ليس انه انها لانه
+    لان لانها كما بين ذا ذي هكذا فقط
+    """.split()
+)
+"""Function words dropped from the lexical index and from lexical queries.
+
+Written in their ``normalize_for_index`` form (``علي`` for ``على``, ``الي`` for
+``إلى``). Postgres ranking has no IDF, so without this list ``في`` and ``من``
+would dominate every score.
+"""
+
+
+def light_stem(word: str) -> str:
+    """Strip one clitic prefix and one suffix from a normalized token.
+
+    ``الصبر`` → ``صبر``, ``بالصبر`` → ``صبر``, ``والمومنين`` → ``مومن``,
+    ``الله`` → ``الله``, ``بالله`` → ``الله``. Digits and anything shorter than
+    :data:`MIN_STEM_LETTERS` are returned unchanged. Idempotent.
+    """
+    if not word or not word[0].isalpha():
+        return word
+    stem = word
+    for prefix in _STEM_PREFIXES:
+        if stem.startswith(prefix) and len(stem) - len(prefix) >= MIN_STEM_LETTERS:
+            stem = stem[len(prefix) :]
+            break
+    else:
+        # A lone particle before the article (بالله, كالله, فلله) is a clitic
+        # even when the article itself must stay for the word to keep its
+        # letters. Single letters are never stripped otherwise (كتاب ≠ تاب).
+        if (
+            stem[0] in _PARTICLES
+            and stem[1:].startswith("ال")
+            and len(stem) - 1 >= MIN_STEM_LETTERS
+        ):
+            stem = stem[1:]
+    for suffix in _STEM_SUFFIXES:
+        if stem.endswith(suffix) and len(stem) - len(suffix) >= MIN_STEM_LETTERS:
+            stem = stem[: -len(suffix)]
+            break
+    return stem
+
+
+def stem_text(normalized: str) -> str:
+    """The lexical-index form of already-normalized text.
+
+    Tokens are stemmed with :func:`light_stem`; stop words (before or after
+    stemming) are dropped. Query and index text must both go through this so
+    that ``الصبر`` finds ``والصبر`` and ``بالصبر``.
+    """
+    kept = []
+    for token in normalized.split():
+        if token in STOP_WORDS:
+            continue
+        stem = light_stem(token)
+        if stem in STOP_WORDS:
+            continue
+        kept.append(stem)
+    return " ".join(kept)

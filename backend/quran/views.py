@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from django.db.models import Count, QuerySet
+from django.db.models import Count, Max, Min, QuerySet
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
@@ -20,6 +20,7 @@ from corpus.models import Segment
 from .models import Ayah, Surah
 from .serializers import (
     AyahDetailSerializer,
+    QuranLocationSerializer,
     SurahDetailSerializer,
     SurahListSerializer,
 )
@@ -29,7 +30,8 @@ AYAH_PAGE_SIZE = 20
 
 
 class SurahListView(ImmutableCacheMixin, ListAPIView):
-    """``GET /api/surahs/`` — all 114, unpaginated, with segment counts."""
+    """``GET /api/surahs/`` — all 114, unpaginated, with segment counts and the
+    juz/mushaf-page span each surah occupies (the index page filters on them)."""
 
     serializer_class = SurahListSerializer
     pagination_class = None
@@ -37,7 +39,18 @@ class SurahListView(ImmutableCacheMixin, ListAPIView):
     def get_queryset(self) -> QuerySet[Surah]:
         # order_by is explicit because Meta.ordering is dropped from a GROUP BY
         # query, which is what annotate() turns this into.
-        return Surah.objects.annotate(segment_count=Count('segments')).order_by('number')
+        #
+        # distinct=True is load-bearing, not tidiness: joining ayahs alongside
+        # segments makes one row per (segment, ayah) pair, so an undistinct
+        # count would report segments x ayah_count. Min/Max are unaffected by
+        # the duplication and need no such guard.
+        return Surah.objects.annotate(
+            segment_count=Count('segments', distinct=True),
+            juz_start=Min('ayahs__juz'),
+            juz_end=Max('ayahs__juz'),
+            page_start=Min('ayahs__page'),
+            page_end=Max('ayahs__page'),
+        ).order_by('number')
 
 
 def _page_number(request: Request) -> int:
@@ -123,6 +136,61 @@ class SurahDetailView(ImmutableCacheMixin, APIView):
             },
         }
         return Response(SurahDetailSerializer(payload).data)
+
+
+def _locate_target(request: Request) -> tuple[str, int]:
+    """The single ``page=``/``juz=`` the caller asked to resolve.
+
+    Exactly one is required: answering both at once would have to pick which
+    one wins, and answering neither has no meaning.
+    """
+    given = [name for name in ('page', 'juz') if request.query_params.get(name) not in (None, '')]
+    if len(given) != 1:
+        raise ValidationError({'detail': 'give exactly one of page or juz'})
+    name = given[0]
+    raw = request.query_params.get(name)
+    try:
+        value = int(raw)  # type: ignore[arg-type]
+    except ValueError as error:
+        raise ValidationError({name: 'must be an integer'}) from error
+    if value < 1:
+        raise ValidationError({name: 'must be 1 or greater'})
+    return name, value
+
+
+class LocateView(ImmutableCacheMixin, APIView):
+    """``GET /api/quran/locate/?page=`` or ``?juz=`` — where that page or juz
+    begins.
+
+    The index page lets a reader type "صفحة ٦٠٤" or "جزء ٣٠"; landing on the
+    right verse needs the reverse of ``Ayah.page``/``Ayah.juz``, which nothing
+    else in the API exposes. The answer feeds ``/surah/{surah}?ayah={number}``,
+    a route the frontend already resolves to the correct ayah page.
+
+    A page or juz past the end of the mushaf is a 404 rather than a 400: the
+    number is well-formed, there is simply no such place. The upper bounds are
+    therefore never hardcoded here — the imported Tanzil data decides.
+    """
+
+    @extend_schema(
+        operation_id='quran_locate',
+        parameters=[
+            OpenApiParameter('page', int, description='Madani mushaf page, 1-604.'),
+            OpenApiParameter('juz', int, description='Juz number, 1-30.'),
+        ],
+        responses=QuranLocationSerializer,
+    )
+    def get(self, request: Request) -> Response:
+        name, value = _locate_target(request)
+        verse = (
+            Ayah.objects.select_related('surah')
+            .filter(**{name: value})
+            .order_by('surah_id', 'number')
+            .first()
+        )
+        if verse is None:
+            raise NotFound(f'no ayah on {name} {value}')
+        return Response(QuranLocationSerializer(verse).data)
 
 
 class AyahDetailView(ImmutableCacheMixin, APIView):

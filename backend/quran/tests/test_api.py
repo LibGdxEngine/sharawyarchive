@@ -27,7 +27,12 @@ SURAH_KEYS = {
     'ayah_count',
     'revelation_place',
     'segment_count',
+    'juz_start',
+    'juz_end',
+    'page_start',
+    'page_end',
 }
+LOCATION_KEYS = {'surah', 'number', 'surah_name_ar', 'juz', 'page'}
 SURAH_DETAIL_KEYS = {'number', 'name_ar', 'name_en', 'ayah_count', 'revelation_place', 'ayahs'}
 PAGE_AYAH_KEYS = {
     'number',
@@ -65,6 +70,46 @@ def test_surah_list_counts_segments_per_surah(api: APIClient, archive: Archive) 
     counts = {row['number']: row['segment_count'] for row in api.get('/api/surahs/').json()}
 
     assert counts == {2: 2, 3: 0}
+
+
+def test_surah_list_carries_the_juz_and_page_span(api: APIClient, archive: Archive) -> None:
+    """The index filters by juz and mushaf page, so each row states its span."""
+    (row,) = api.get('/api/surahs/').json()
+
+    ayahs = archive.surah.ayahs.all()
+    assert (row['juz_start'], row['juz_end']) == (
+        min(ayah.juz for ayah in ayahs),
+        max(ayah.juz for ayah in ayahs),
+    )
+    assert (row['page_start'], row['page_end']) == (
+        min(ayah.page for ayah in ayahs),
+        max(ayah.page for ayah in ayahs),
+    )
+
+
+def test_surah_list_segment_count_survives_the_ayah_join(
+    api: APIClient, archive: Archive
+) -> None:
+    """Regression: aggregating over ayahs must not multiply the segment count.
+
+    ``Count('segments')`` next to ``Min('ayahs__juz')`` counts one row per
+    (segment, ayah) pair, so this surah's 2 segments would report as 2 x 45.
+    """
+    long_one = make_surah(number=5, ayah_count=45, name_ar='المائدة', name_en='Al-Maidah')[0]
+    for ordinal in range(2):
+        make_segment(
+            archive.source,
+            archive.audio,
+            surah=long_one,
+            ayah_start=1,
+            ayah_end=10,
+            title=f'المائدة {ordinal}',
+            ordinal=ordinal,
+        )
+
+    counts = {row['number']: row['segment_count'] for row in api.get('/api/surahs/').json()}
+
+    assert counts == {2: 2, 5: 2}
 
 
 def test_surah_list_is_one_query(
@@ -271,3 +316,61 @@ def test_a_segment_without_an_ayah_range_covers_nothing(
 @pytest.mark.parametrize('path', ['/api/ayahs/2/99/', '/api/ayahs/9/1/'])
 def test_unknown_ayah_is_404(api: APIClient, archive: Archive, path: str) -> None:
     assert api.get(path).status_code == 404
+
+
+# --- GET /api/quran/locate/ --------------------------------------------------
+
+
+def test_locate_resolves_a_mushaf_page_to_its_first_ayah(
+    api: APIClient, long_surah: None
+) -> None:
+    response = api.get('/api/quran/locate/', {'page': 3})
+
+    assert response.status_code == 200
+    assert response.headers['Cache-Control'] == IMMUTABLE
+    body = response.json()
+    assert set(body) == LOCATION_KEYS
+    # make_surah puts ten ayahs on a page, so page 3 opens on ayah 21.
+    assert (body['surah'], body['number'], body['page']) == (4, 21, 3)
+    assert body['surah_name_ar'] == 'النساء'
+
+
+def test_locate_resolves_a_juz_to_its_first_ayah(api: APIClient, long_surah: None) -> None:
+    body = api.get('/api/quran/locate/', {'juz': 1}).json()
+
+    assert (body['surah'], body['number'], body['juz']) == (4, 1, 1)
+
+
+def test_locate_takes_the_first_ayah_in_mushaf_order(api: APIClient, archive: Archive) -> None:
+    """Two surahs sharing a page resolve to the earlier one, not either one."""
+    make_surah(number=3, ayah_count=4, name_ar='آل عمران', name_en='Aal-Imran')
+
+    body = api.get('/api/quran/locate/', {'page': 1}).json()
+
+    assert (body['surah'], body['number']) == (2, 1)
+
+
+@pytest.mark.parametrize('query', [{'page': 6}, {'juz': 2}])
+def test_locate_past_the_end_is_404(
+    api: APIClient, long_surah: None, query: dict[str, int]
+) -> None:
+    response = api.get('/api/quran/locate/', query)
+
+    assert response.status_code == 404
+    assert response.headers.get('Cache-Control') != IMMUTABLE  # errors are never cached
+
+
+@pytest.mark.parametrize(
+    'query',
+    [
+        {'page': '0'},
+        {'juz': '-1'},
+        {'page': 'last'},
+        {'page': 1, 'juz': 1},  # ambiguous: which one wins?
+        {},  # nothing to resolve
+    ],
+)
+def test_locate_rejects_an_unusable_query(
+    api: APIClient, long_surah: None, query: dict[str, Any]
+) -> None:
+    assert api.get('/api/quran/locate/', query).status_code == 400

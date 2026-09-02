@@ -2,9 +2,12 @@ import ErrorNote from "@/components/ErrorNote";
 import SurahIndexList from "@/components/SurahIndexList";
 import { getSurahs } from "@/lib/api";
 import { toArabicIndic } from "@/lib/format";
+import { filtersFromParams } from "@/lib/surah-filter";
 import type { Surah } from "@/types/models";
 
 export const dynamic = "force-dynamic";
+
+type Query = { [key: string]: string | string[] | undefined };
 
 /** Pointed mihrab arch — the same niche motif the cards use. */
 const ARCH_PATH =
@@ -28,7 +31,15 @@ function OrnamentDivider() {
   );
 }
 
-export default async function SurahsPage() {
+export default async function SurahsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Query>;
+}) {
+  // Filters come from the URL so a shared link renders already narrowed,
+  // server-side, instead of flashing all 114 cards first.
+  const initialFilters = filtersFromParams(await searchParams);
+
   let surahs: Surah[];
   try {
     surahs = await getSurahs();
@@ -70,7 +81,7 @@ export default async function SurahsPage() {
           </p>
         </header>
 
-        <SurahIndexList surahs={surahs} />
+        <SurahIndexList surahs={surahs} initialFilters={initialFilters} />
       </div>
     </main>
   );

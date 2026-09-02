@@ -666,6 +666,159 @@ body[data-verse-theme] {
   color: var(--color-accent);
 }
 
+/* --- Index filters ------------------------------------------------------
+   Browse controls under the search box. Everything here reuses the .surahs
+   gold tokens declared above, so the three theme blocks need no additions. */
+
+.surah-jump {
+  margin-top: 0.75rem;
+  text-align: center;
+  font-size: 0.8125rem;
+}
+
+.surah-jump--muted {
+  color: var(--color-ink-faint);
+}
+
+/* Same pill recipe as .sp-chip on the surah page, in the index's token scope. */
+.surah-jump-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--surah-gold) 32%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--surah-gold) 8%, transparent);
+  color: var(--surah-gold-deep);
+  line-height: 1.6;
+  transition:
+    background-color 0.2s,
+    color 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.surah-jump-go:hover {
+  background: var(--surah-gold);
+  border-color: var(--surah-gold);
+  color: var(--surah-gold-ink);
+  box-shadow: 0 6px 16px var(--surah-glow);
+}
+
+.surah-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 1rem;
+}
+
+.surah-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--color-ink-muted);
+}
+
+.surah-select,
+.surah-numfield {
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.7rem;
+  min-height: 2rem;
+}
+
+.surah-numfield {
+  width: 5.5rem;
+}
+
+.surah-select:focus-visible,
+.surah-numfield:focus-visible {
+  outline: none;
+  border-color: var(--surah-gold-soft);
+  box-shadow: 0 0 0 3px var(--surah-glow);
+}
+
+/* Segmented control, mirroring .landing-kind in the index's own tokens. */
+.surah-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--surah-badge-bg);
+}
+
+.surah-segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 4px 14px;
+  border-radius: 9999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.surah-segmented button[aria-pressed="true"] {
+  background: var(--surah-gold);
+  color: var(--surah-gold-ink);
+}
+
+.surah-segmented button:focus-visible,
+.surah-toggle:focus-visible,
+.surah-reset:focus-visible {
+  outline: 2px solid var(--surah-gold);
+  outline-offset: 2px;
+}
+
+.surah-toggle {
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--surah-badge-bg);
+  color: var(--color-ink-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.surah-toggle[aria-pressed="true"] {
+  border-color: var(--surah-gold);
+  background: var(--surah-gold);
+  color: var(--surah-gold-ink);
+}
+
+.surah-reset {
+  border: 0;
+  background: transparent;
+  color: var(--surah-gold-deep);
+  font-size: 0.8125rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.surah-count {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--color-ink-faint);
+}
+
 /* Staggered entrance. `backwards` (not `both`) leaves the final state to the
    natural cascade, so the hover lift transition keeps working afterwards. */
 @keyframes surahCardIn {

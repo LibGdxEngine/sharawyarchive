@@ -215,6 +215,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/CorrectionCreated'
           description: ''
+  /api/quran/locate/:
+    get:
+      operationId: quran_locate
+      description: |-
+        ``GET /api/quran/locate/?page=`` or ``?juz=`` — where that page or juz
+        begins.
+
+        The index page lets a reader type "صفحة ٦٠٤" or "جزء ٣٠"; landing on the
+        right verse needs the reverse of ``Ayah.page``/``Ayah.juz``, which nothing
+        else in the API exposes. The answer feeds ``/surah/{surah}?ayah={number}``,
+        a route the frontend already resolves to the correct ayah page.
+
+        A page or juz past the end of the mushaf is a 404 rather than a 400: the
+        number is well-formed, there is simply no such place. The upper bounds are
+        therefore never hardcoded here — the imported Tanzil data decides.
+      parameters:
+      - in: query
+        name: juz
+        schema:
+          type: integer
+        description: Juz number, 1-30.
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: Madani mushaf page, 1-604.
+      tags:
+      - quran
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuranLocation'
+          description: ''
   /api/search/:
     get:
       operationId: search_retrieve
@@ -389,7 +428,9 @@ paths:
   /api/surahs/:
     get:
       operationId: surahs_list
-      description: '``GET /api/surahs/`` — all 114, unpaginated, with segment counts.'
+      description: |-
+        ``GET /api/surahs/`` — all 114, unpaginated, with segment counts and the
+        juz/mushaf-page span each surah occupies (the index page filters on them).
       tags:
       - surahs
       security:
@@ -871,6 +912,37 @@ components:
         * `classic` - Classic
         * `night` - Night
         * `light` - Light
+    QuranLocation:
+      type: object
+      description: |-
+        ``GET /api/quran/locate/`` — the first ayah of a mushaf page or juz.
+
+        Deliberately carries no verse text: this answers *where*, and the caller
+        navigates to ``/surah/{surah}?ayah={number}`` to read it.
+      properties:
+        surah:
+          type: integer
+        number:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        surah_name_ar:
+          type: string
+        juz:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        page:
+          type: integer
+          maximum: 32767
+          minimum: 0
+          description: Madani mushaf page, 1-604.
+      required:
+      - juz
+      - number
+      - page
+      - surah
+      - surah_name_ar
     RevelationPlaceEnum:
       enum:
       - makkah
@@ -1051,7 +1123,13 @@ components:
       - revelation_place
     SurahList:
       type: object
-      description: One row of ``GET /api/surahs/``.
+      description: |-
+        One row of ``GET /api/surahs/``.
+
+        ``juz_start``/``juz_end`` and ``page_start``/``page_end`` are the inclusive
+        juz and Madani-mushaf-page span the surah occupies, aggregated from its
+        ayahs by the view. The index page filters on them, which is why they ride
+        along here instead of costing a request per surah.
       properties:
         number:
           type: integer
@@ -1076,12 +1154,28 @@ components:
         segment_count:
           type: integer
           readOnly: true
+        juz_start:
+          type: integer
+          readOnly: true
+        juz_end:
+          type: integer
+          readOnly: true
+        page_start:
+          type: integer
+          readOnly: true
+        page_end:
+          type: integer
+          readOnly: true
       required:
       - ayah_count
+      - juz_end
+      - juz_start
       - name_ar
       - name_ar_plain
       - name_en
       - number
+      - page_end
+      - page_start
       - revelation_place
       - segment_count
     TopicDetail:

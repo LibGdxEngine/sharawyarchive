@@ -159,6 +159,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/quran/locate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ``GET /api/quran/locate/?page=`` or ``?juz=`` — where that page or juz
+         *     begins.
+         *
+         *     The index page lets a reader type "صفحة ٦٠٤" or "جزء ٣٠"; landing on the
+         *     right verse needs the reverse of ``Ayah.page``/``Ayah.juz``, which nothing
+         *     else in the API exposes. The answer feeds ``/surah/{surah}?ayah={number}``,
+         *     a route the frontend already resolves to the correct ayah page.
+         *
+         *     A page or juz past the end of the mushaf is a 404 rather than a 400: the
+         *     number is well-formed, there is simply no such place. The upper bounds are
+         *     therefore never hardcoded here — the imported Tanzil data decides.
+         */
+        get: operations["quran_locate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search/": {
         parameters: {
             query?: never;
@@ -286,7 +315,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description ``GET /api/surahs/`` — all 114, unpaginated, with segment counts. */
+        /**
+         * @description ``GET /api/surahs/`` — all 114, unpaginated, with segment counts and the
+         *     juz/mushaf-page span each surah occupies (the index page filters on them).
+         */
         get: operations["surahs_list"];
         put?: never;
         post?: never;
@@ -543,6 +575,20 @@ export interface components {
          */
         PresetEnum: "classic" | "night" | "light";
         /**
+         * @description ``GET /api/quran/locate/`` — the first ayah of a mushaf page or juz.
+         *
+         *     Deliberately carries no verse text: this answers *where*, and the caller
+         *     navigates to ``/surah/{surah}?ayah={number}`` to read it.
+         */
+        QuranLocation: {
+            surah: number;
+            number: number;
+            surah_name_ar: string;
+            juz: number;
+            /** @description Madani mushaf page, 1-604. */
+            page: number;
+        };
+        /**
          * @description * `makkah` - Makkah
          *     * `madinah` - Madinah
          * @enum {string}
@@ -609,7 +655,14 @@ export interface components {
             revelation_place: components["schemas"]["RevelationPlaceEnum"];
             ayahs: components["schemas"]["AyahPage"];
         };
-        /** @description One row of ``GET /api/surahs/``. */
+        /**
+         * @description One row of ``GET /api/surahs/``.
+         *
+         *     ``juz_start``/``juz_end`` and ``page_start``/``page_end`` are the inclusive
+         *     juz and Madani-mushaf-page span the surah occupies, aggregated from its
+         *     ayahs by the view. The index page filters on them, which is why they ride
+         *     along here instead of costing a request per surah.
+         */
         SurahList: {
             number: number;
             name_ar: string;
@@ -619,6 +672,10 @@ export interface components {
             ayah_count: number;
             revelation_place: components["schemas"]["RevelationPlaceEnum"];
             readonly segment_count: number;
+            readonly juz_start: number;
+            readonly juz_end: number;
+            readonly page_start: number;
+            readonly page_end: number;
         };
         /**
          * @description ``GET /api/topics/{slug}/``. The view attaches ``chunks`` — the topic's
@@ -829,6 +886,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CorrectionCreated"];
+                };
+            };
+        };
+    };
+    quran_locate: {
+        parameters: {
+            query?: {
+                /** @description Juz number, 1-30. */
+                juz?: number;
+                /** @description Madani mushaf page, 1-604. */
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuranLocation"];
                 };
             };
         };

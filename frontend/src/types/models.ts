@@ -11,6 +11,21 @@ export interface Surah {
   ayah_count: number;
   revelation_place: string;
   segment_count: number;
+  /** Inclusive juz span of the surah's ayahs. */
+  juz_start: number;
+  juz_end: number;
+  /** Inclusive Madani-mushaf page span of the surah's ayahs. */
+  page_start: number;
+  page_end: number;
+}
+
+/** `GET /api/quran/locate/` — where a mushaf page or juz begins. */
+export interface QuranLocation {
+  surah: number;
+  number: number;
+  surah_name_ar: string;
+  juz: number;
+  page: number;
 }
 
 export interface AyahSummary {

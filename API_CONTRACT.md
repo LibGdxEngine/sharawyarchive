@@ -3,7 +3,13 @@
 All timestamps are integer **milliseconds**. All list endpoints are JSON. Base path `/api/`.
 
 ## GET /api/surahs/
-`[{ "number": 1, "name_ar": "الفاتحة", "name_ar_plain": "الفاتحه", "name_en": "Al-Fatihah", "ayah_count": 7, "revelation_place": "makkah", "segment_count": 3 }]`
+`[{ "number": 1, "name_ar": "الفاتحة", "name_ar_plain": "الفاتحه", "name_en": "Al-Fatihah", "ayah_count": 7, "revelation_place": "makkah", "segment_count": 3, "juz_start": 1, "juz_end": 1, "page_start": 1, "page_end": 1 }]`
+
+## GET /api/quran/locate/?page=1
+`{ "surah": 1, "number": 1, "surah_name_ar": "الفاتحة", "juz": 1, "page": 1 }`
+
+Exactly one of `?page=` or `?juz=`. Answers the first ayah of that mushaf page
+or juz; `404` when there is no such page or juz.
 
 ## GET /api/surahs/{n}/?page=1
 ```json
@@ -165,3 +171,22 @@ search 30/min anon; corrections 10/hour; clips 5/hour → 429 with `Retry-After`
    wording of amendment 2. `GET /api/search/suggest/` stays prefix-based but
    returns only snippets that contain every typed word, cut on a word
    boundary so a clicked suggestion always matches itself.
+13. **Browsing the index by juz and page** (2026-09-02): `GET /api/surahs/`
+    gains four fields — `juz_start`, `juz_end`, `page_start`, `page_end` — the
+    inclusive juz and Madani-mushaf-page span each surah occupies, aggregated
+    from its ayahs. They come from the Tanzil import like every other verse
+    fact (rule 1); ASR never touches them. They ride along on the existing
+    single query so the `/surahs` index can filter by juz or page without a
+    request per surah, and `segment_count` is now counted `DISTINCT` — joining
+    the ayah table beside the segment table otherwise multiplies it by
+    `ayah_count`.
+
+    A new `GET /api/quran/locate/` takes **exactly one** of `?page=` (Madani
+    mushaf) or `?juz=` and answers the first ayah of it:
+    `{ "surah", "number", "surah_name_ar", "juz", "page" }`. It is the reverse
+    of `Ayah.page`/`Ayah.juz`, which nothing else exposed, and exists so the
+    index can turn a typed "صفحة ٦٠٤" or "جزء ٣٠" into
+    `/surah/{surah}?ayah={number}`. Giving both parameters, or neither, is a
+    `400`; a well-formed page or juz that is past the end of the mushaf is a
+    `404`, not an empty `200`. Both endpoints stay
+    `public, max-age=31536000, immutable`.

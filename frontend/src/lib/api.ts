@@ -3,6 +3,7 @@ import type {
   Surah,
   SurahDetail,
   AyahDetail,
+  QuranLocation,
   Segment,
   SegmentChunk,
   Transcript,
@@ -87,6 +88,20 @@ export function getSurah(n: number, page = 1): Promise<SurahDetail> {
 
 export function getAyah(surah: number, ayah: number): Promise<AyahDetail> {
   return apiFetch<AyahDetail>(`/ayahs/${surah}/${ayah}/`);
+}
+
+/**
+ * Where a mushaf page or juz begins — exactly one of them, per the endpoint.
+ *
+ * Throws `ApiError` with status 404 when the page or juz is past the end of
+ * the mushaf, which the index treats as "that reference goes nowhere".
+ */
+export function locate(
+  target: { page: number } | { juz: number }
+): Promise<QuranLocation> {
+  const query =
+    "page" in target ? `page=${target.page}` : `juz=${target.juz}`;
+  return apiFetch<QuranLocation>(`/quran/locate/?${query}`);
 }
 
 // ---------------------------------------------------------------------------

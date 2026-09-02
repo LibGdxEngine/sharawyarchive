@@ -16,9 +16,19 @@ from .models import Ayah, RevelationPlace, Surah
 
 
 class SurahListSerializer(serializers.ModelSerializer):
-    """One row of ``GET /api/surahs/``."""
+    """One row of ``GET /api/surahs/``.
+
+    ``juz_start``/``juz_end`` and ``page_start``/``page_end`` are the inclusive
+    juz and Madani-mushaf-page span the surah occupies, aggregated from its
+    ayahs by the view. The index page filters on them, which is why they ride
+    along here instead of costing a request per surah.
+    """
 
     segment_count = serializers.IntegerField(read_only=True)
+    juz_start = serializers.IntegerField(read_only=True)
+    juz_end = serializers.IntegerField(read_only=True)
+    page_start = serializers.IntegerField(read_only=True)
+    page_end = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Surah
@@ -30,6 +40,10 @@ class SurahListSerializer(serializers.ModelSerializer):
             'ayah_count',
             'revelation_place',
             'segment_count',
+            'juz_start',
+            'juz_end',
+            'page_start',
+            'page_end',
         )
 
 
@@ -112,4 +126,25 @@ class AyahDetailSerializer(serializers.ModelSerializer):
             'juz',
             'page',
             'segments',
+        )
+
+
+class QuranLocationSerializer(serializers.ModelSerializer):
+    """``GET /api/quran/locate/`` — the first ayah of a mushaf page or juz.
+
+    Deliberately carries no verse text: this answers *where*, and the caller
+    navigates to ``/surah/{surah}?ayah={number}`` to read it.
+    """
+
+    surah = serializers.IntegerField(source='surah_id')
+    surah_name_ar = serializers.CharField(source='surah.name_ar')
+
+    class Meta:
+        model = Ayah
+        fields = (
+            'surah',
+            'number',
+            'surah_name_ar',
+            'juz',
+            'page',
         )

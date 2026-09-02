@@ -33,6 +33,15 @@ KHAWATIR_TEXTS: list[str] = [
     "التَّوْبَةُ النَّصُوحُ بَابُهَا مَفْتُوحٌ",
     "الْعِلْمُ نُورٌ يَهْدِي الْقَلْبَ",
     "الزَّكَاةُ طُهْرَةٌ لِلْمَالِ",
+    # Near-misses for the strict phrase tests (indices 0-5 above stay stable).
+    "الصَّبْرُ الْجَمِيلُ، عِنْدَ الصَّدْمَةِ.",  # 6: SABR's words with a gap, punctuation glued on
+    "عِنْدَ الصَّدْمَةِ الصَّبْرُ",  # 7: SABR's words in the wrong order
+    "الْمُؤْمِنُونَ إِخْوَةٌ",  # 8: one edit away from الْمُؤْمِنِينَ in text 2
+    "الذِّكْرُ طُمَأْنِينَةُ الْقَلْبِ",  # 9: third الْقَلْب chunk (with text 4 and the recitation)
+    "الْقَلْبُ السَّلِيمُ نَجَاةٌ",  # 10: fourth, phrase at the very start
+    # 11: longer than a suggestion snippet, and its 80th character falls
+    # inside a word (asserted in the round-trip test).
+    "إِنَّ الرِّزْقَ مَقْسُومٌ وَالْأَجَلَ مَحْتُومٌ وَالْعَبْدُ مَأْمُورٌ بِالسَّعْيِ لَا بِالْقَلَقِ عَلَى مَا قُدِّرَ لَهُ",
 ]
 
 RECITATION_TEXTS: list[str] = [
@@ -124,18 +133,35 @@ def quran_slice(db: None) -> dict[int, Surah]:
                 'order_revealed': revealed,
             },
         )
-    for surah_number, ayah_number, text in (
-        (2, 255, "ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ"),
-        (2, 282, "يَـٰٓأَيُّهَا ٱلَّذِينَ ءَامَنُوٓا۟ إِذَا تَدَايَنتُم بِدَيْنٍ"),
-        (3, 61, "فَمَنْ حَآجَّكَ فِيهِ مِنۢ بَعْدِ مَا جَآءَكَ مِنَ ٱلْعِلْمِ"),
-        (24, 35, "ٱللَّهُ نُورُ ٱلسَّمَـٰوَٰتِ وَٱلْأَرْضِ"),
+    # Uthmani (display + text_normalized) and imlaei (the spelling readers
+    # type: السماوات, not السموت) — both are indexed for verse search.
+    for surah_number, ayah_number, text, imlaei in (
+        (
+            2,
+            255,
+            "ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ",
+            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ",
+        ),
+        (
+            2,
+            282,
+            "يَـٰٓأَيُّهَا ٱلَّذِينَ ءَامَنُوٓا۟ إِذَا تَدَايَنتُم بِدَيْنٍ",
+            "يَا أَيُّهَا الَّذِينَ آمَنُوا إِذَا تَدَايَنتُم بِدَيْنٍ",
+        ),
+        (
+            3,
+            61,
+            "فَمَنْ حَآجَّكَ فِيهِ مِنۢ بَعْدِ مَا جَآءَكَ مِنَ ٱلْعِلْمِ",
+            "فَمَنْ حَاجَّكَ فِيهِ مِن بَعْدِ مَا جَاءَكَ مِنَ الْعِلْمِ",
+        ),
+        (24, 35, "ٱللَّهُ نُورُ ٱلسَّمَـٰوَٰتِ وَٱلْأَرْضِ", "اللَّهُ نُورُ السَّمَاوَاتِ وَالْأَرْضِ"),
     ):
         Ayah.objects.update_or_create(
             surah=surahs[surah_number],
             number=ayah_number,
             defaults={
                 'text_uthmani': text,
-                'text_imlaei': text,
+                'text_imlaei': imlaei,
                 'text_normalized': normalize_for_index(text),
                 'juz': 3,
                 'hizb': 5,

@@ -1,14 +1,18 @@
-"""Search ranking for the Sha'rawy Archive: lexical retrieval over Meilisearch.
+"""Search ranking for the Sha'rawy Archive: strict phrase search over Meilisearch.
 
 All ranking lives here; views stay thin (``SHAARAWY_PROJECT_PLAN.md``, Phase 3).
 
-Retrieval is Meilisearch over two indexes: the ``chunks`` index holds the ASR
-machine transcripts of audio segments, and the ``ayahs`` index holds the
-canonical mushaf text (``Ayah.text_normalized``). In both indexes only
-``text_normalized`` is searchable, and the query is passed through
-:func:`corpus.arabic.normalize_for_index` first, so a reader typing full
+Search runs in two stages. Meilisearch is the candidate generator: the
+``chunks`` index holds the ASR machine transcripts of audio segments and the
+``ayahs`` index holds the canonical mushaf text, both searchable on their
+``normalize_for_index`` form, and the query goes through
+:func:`corpus.arabic.normalize_for_index` first so a reader typing full
 diacritics or the "wrong" hamza gets the same hits as the canonical spelling
-(``CLAUDE.md`` rule 2). Rule 1 is respected structurally: mushaf text is
+(``CLAUDE.md`` rule 2). :mod:`search.matching` is then the gate: a candidate
+survives only when every query word occurs in its text consecutively and in
+order, each within a typo budget set by the word's length (1-3 letters exact,
+4-7 letters one edit, 8+ letters two). Survivors are ordered by edits used,
+then by Meilisearch's rank. Rule 1 is respected structurally: mushaf text is
 indexed from ``quran.Ayah`` rows only — ASR output never enters the ``ayahs``
 index, and canonical text never enters ``chunks``.
 
@@ -38,6 +42,7 @@ from corpus.arabic import normalize_for_index
 from corpus.models import Chunk, SegmentKind
 from quran.models import Ayah, Surah
 
+from . import matching
 from .ayah_names import ayah_for_name
 
 __all__ = [
@@ -76,21 +81,54 @@ MAX_PAGE = 100
 retrieval (API_CONTRACT.md amendment 2). The cap bounds retrieval depth at
 ``MAX_PAGE * MAX_PAGE_SIZE``."""
 
-CANDIDATE_POOL = 100
-"""How deep retrieval goes before pagination."""
+VERIFY_POOL = 1000
+"""How many Meilisearch candidates the phrase verifier scans per query.
+
+Equal to Meilisearch's default ``pagination.maxTotalHits`` (a larger ``limit``
+is silently capped, so raising this means raising that setting too) and to
+``MAX_PAGE * DEFAULT_PAGE_SIZE``, so every page the view can ask for is served
+from one pool."""
 
 INDEX_BATCH_SIZE = 1000
 TASK_TIMEOUT_MS = 30_000
 
+TYPO_TOLERANCE: dict[str, Any] = {
+    "enabled": True,
+    "minWordSizeForTypos": {
+        # The same letter thresholds as search.matching (Meilisearch counts
+        # characters, verified live on v1.15), so retrieval never withholds a
+        # candidate the verifier would accept.
+        "oneTypo": matching.ONE_TYPO_MIN_LETTERS,
+        "twoTypos": matching.TWO_TYPOS_MIN_LETTERS,
+    },
+}
+
+RANKING_RULES = ["words", "proximity", "typo", "attribute", "sort", "exactness"]
+"""Meilisearch v1.15 rule names. ``proximity`` is promoted above ``typo`` so
+that documents holding the query words adjacent and in order fill the
+candidate pool before ones that merely contain them somewhere."""
+
+CHUNK_TEXT_ATTRIBUTES = ["text_normalized"]
+"""Chunk attributes the verifier checks — also the only searchable one."""
+
+AYAH_TEXT_ATTRIBUTES = ["text_normalized", "text_imlaei_normalized"]
+"""The mushaf is indexed in both its Uthmani and imlaei spellings: readers type
+``السماوات`` and ``ابراهيم``, the Uthmani text says ``السموت`` and ``ابرهم``,
+and a strict typo budget cannot bridge the second pair."""
+
 INDEX_SETTINGS: dict[str, Any] = {
-    "searchableAttributes": ["text_normalized"],
+    "searchableAttributes": CHUNK_TEXT_ATTRIBUTES,
     "filterableAttributes": ["surah", "kind", "ayah_start", "segment_id"],
     "sortableAttributes": ["surah", "start_ms"],
+    "typoTolerance": TYPO_TOLERANCE,
+    "rankingRules": RANKING_RULES,
 }
 
 AYAH_INDEX_SETTINGS: dict[str, Any] = {
-    "searchableAttributes": ["text_normalized"],
+    "searchableAttributes": AYAH_TEXT_ATTRIBUTES,
     "filterableAttributes": ["surah"],
+    "typoTolerance": TYPO_TOLERANCE,
+    "rankingRules": RANKING_RULES,
 }
 
 VERSE_MATCH_LIMIT = 8
@@ -154,9 +192,10 @@ class SearchResult:
 
 @dataclass(frozen=True)
 class SearchResponse:
-    """``total`` is Meilisearch's estimate of the matching document count
-    over the chunks index; ``verse_matches`` and ``ayah_matches`` are small
-    fixed answer blocks that stay identical on every page."""
+    """``total`` is the number of chunks that passed phrase verification —
+    exact while fewer than :data:`VERIFY_POOL` candidates came back, a lower
+    bound once the pool saturates; ``verse_matches`` and ``ayah_matches`` are
+    small fixed answer blocks that stay identical on every page."""
 
     query: str
     ayah_matches: list[AyahMatch]
@@ -291,12 +330,13 @@ def ensure_ayahs_index() -> None:
 def _ayah_document(ayah: Ayah) -> dict[str, Any]:
     """The leanest possible document: the verse text is only needed at display
     time, and display rows are hydrated from the database, so the index holds
-    nothing but the normalized form and its citation."""
+    nothing but the two normalized spellings and the citation."""
     return {
         "id": ayah.pk,
         "surah": ayah.surah_id,
         "number": ayah.number,
         "text_normalized": ayah.text_normalized,
+        "text_imlaei_normalized": normalize_for_index(ayah.text_imlaei),
     }
 
 
@@ -324,27 +364,23 @@ def verse_search(
     surah: int | None = None,
     limit: int = VERSE_MATCH_LIMIT,
 ) -> list[int]:
-    """Ranked Ayah primary keys whose normalized text matches ``query``.
+    """Ranked Ayah primary keys whose text contains ``query`` as a phrase.
 
-    The query is normalized here, exactly as the indexed text was. A missing
+    The same two stages as :func:`lexical_search`, over the ayahs index; the
+    phrase may match either the Uthmani or the imlaei spelling. A missing
     index yields an empty result, so search keeps working before
     ``manage.py index_quran`` has ever run.
     """
-    options: dict[str, Any] = {
-        "limit": limit,
-        "attributesToRetrieve": ["id"],
-        "matchingStrategy": "all",
-    }
-    if surah is not None:
-        options["filter"] = [f"surah = {int(surah)}"]
-    index = meili_client().index(ayahs_index_name())
-    try:
-        response = index.search(normalize_for_index(query), options)
-    except MeilisearchApiError as error:
-        if _index_missing(error):
-            return []
-        raise
-    return [int(hit["id"]) for hit in response["hits"]]
+    tokens = _query_tokens(query)
+    if not tokens:
+        return []
+    filters = [f"surah = {int(surah)}"] if surah is not None else []
+    hits = _candidates(
+        ayahs_index_name(), tokens, filters=filters, attributes=AYAH_TEXT_ATTRIBUTES
+    )
+    if hits is None:
+        return []
+    return _verify(hits, tokens, attributes=AYAH_TEXT_ATTRIBUTES)[:limit]
 
 
 def _hydrate_verses(ayah_ids: Sequence[int]) -> list[VerseMatch]:
@@ -385,41 +421,98 @@ def _meili_filters(kind: str | None, surah: int | None) -> list[str]:
     return filters
 
 
+def _query_tokens(query: str) -> list[str]:
+    """The query as index-form words — what both stages match on."""
+    return matching.tokenize(normalize_for_index(query))
+
+
+def _candidates(
+    index_name: str,
+    tokens: Sequence[str],
+    *,
+    filters: Sequence[str],
+    attributes: Sequence[str],
+) -> list[dict[str, Any]] | None:
+    """Meilisearch's top :data:`VERIFY_POOL` hits for ``tokens``, each carrying
+    ``id`` plus the text ``attributes`` the verifier needs; ``None`` when the
+    index does not exist yet.
+
+    The words are re-joined with single spaces rather than sent raw, so query
+    syntax a reader might type (``"..."`` phrases, ``-word`` negation) is
+    inert. ``matchingStrategy`` is ``all`` on purpose: with Meilisearch's
+    default the engine drops query words until something matches, and in
+    Arabic almost every word starts with the article ``ال``, so a two-word
+    query drags the whole corpus back as prefix matches. Meilisearch only looks
+    at the first ten words; the verifier checks all of them.
+    """
+    options: dict[str, Any] = {
+        "limit": VERIFY_POOL,
+        "attributesToRetrieve": ["id", *attributes],
+        "matchingStrategy": "all",
+    }
+    if filters:
+        options["filter"] = list(filters)
+    index = meili_client().index(index_name)
+    try:
+        response = index.search(" ".join(tokens), options)
+    except MeilisearchApiError as error:
+        if _index_missing(error):
+            return None
+        raise
+    return list(response["hits"])
+
+
+def _verify(
+    hits: Sequence[dict[str, Any]], tokens: Sequence[str], *, attributes: Sequence[str]
+) -> list[int]:
+    """Ids of the ``hits`` that really contain the phrase, best first.
+
+    A hit survives when :func:`search.matching.phrase_match` finds the query
+    words consecutively and in order in any of its ``attributes``; survivors
+    are ordered by edits used, then by Meilisearch's own rank.
+    """
+    survivors: list[tuple[int, int, int]] = []
+    for rank, hit in enumerate(hits):
+        best: matching.PhraseMatch | None = None
+        for attribute in attributes:
+            match = matching.phrase_match(tokens, hit.get(attribute) or "")
+            if match is not None and (best is None or match.typos < best.typos):
+                best = match
+        if best is not None:
+            survivors.append((best.typos, rank, int(hit["id"])))
+    survivors.sort()
+    return [document_id for _, _, document_id in survivors]
+
+
 def lexical_search(
     query: str,
     *,
     kind: str | None = None,
     surah: int | None = None,
-    limit: int = CANDIDATE_POOL,
 ) -> tuple[list[int], int]:
-    """Meilisearch hits for ``query`` as ``(chunk ids in rank order, total)``.
+    """Chunk ids whose transcript contains ``query`` as a phrase, best first,
+    with the count of such chunks.
 
-    The query is normalized here, exactly as the indexed ``text_normalized``
-    was. A missing index yields an empty result rather than an error, so search
-    keeps working before the first pipeline run.
-
-    ``matchingStrategy`` is ``all`` on purpose: with Meilisearch's default the
-    engine drops query words until something matches, and in Arabic almost
-    every word starts with the article ``ال``, so a two-word query drags the
-    whole corpus back as prefix matches.
+    Stage one asks Meilisearch for up to :data:`VERIFY_POOL` candidates that
+    hold every query word; stage two keeps only those where the words are
+    consecutive, in order, and within their per-word typo budget. The count is
+    exact while the pool did not fill and a lower bound when it did. A missing
+    index yields an empty result rather than an error, so search keeps working
+    before the first pipeline run.
     """
-    options: dict[str, Any] = {
-        "limit": limit,
-        "attributesToRetrieve": ["id"],
-        "matchingStrategy": "all",
-    }
-    filters = _meili_filters(kind, surah)
-    if filters:
-        options["filter"] = filters
-    index = meili_client().index(chunks_index_name())
-    try:
-        response = index.search(normalize_for_index(query), options)
-    except MeilisearchApiError as error:
-        if _index_missing(error):
-            return [], 0
-        raise
-    hits = [int(hit["id"]) for hit in response["hits"]]
-    return hits, int(response.get("estimatedTotalHits", len(hits)))
+    tokens = _query_tokens(query)
+    if not tokens:
+        return [], 0
+    hits = _candidates(
+        chunks_index_name(),
+        tokens,
+        filters=_meili_filters(kind, surah),
+        attributes=CHUNK_TEXT_ATTRIBUTES,
+    )
+    if hits is None:
+        return [], 0
+    ids = _verify(hits, tokens, attributes=CHUNK_TEXT_ATTRIBUTES)
+    return ids, len(ids)
 
 
 # --- Ayah references ---------------------------------------------------------
@@ -527,6 +620,22 @@ SUGGEST_LIMIT = 6
 SUGGEST_MIN_CHARS = 2
 """Don't query Meilisearch for single-character input — noise."""
 
+SUGGEST_SNIPPET_CHARS = 80
+"""Longest suggestion shown, cut back to a word boundary."""
+
+
+def _snippet(text: str, limit: int = SUGGEST_SNIPPET_CHARS) -> str:
+    """The first ``limit`` characters of ``text``, ending on a whole word.
+
+    A suggestion becomes the next query verbatim, and strict search would
+    reject a snippet whose last word was cut in half.
+    """
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text.rfind(" ", 0, limit + 1)
+    return (text[:cut] if cut > 0 else text[:limit]).strip()
+
 
 def suggest(query: str, kind: str | None = None, limit: int = SUGGEST_LIMIT) -> list[str]:
     """Autocomplete suggestions, scoped by the selected ``kind``.
@@ -544,9 +653,12 @@ def suggest(query: str, kind: str | None = None, limit: int = SUGGEST_LIMIT) -> 
 def _chunk_suggest(query: str, *, kind: str | None, limit: int) -> list[str]:
     """Chunk-snippet suggestions from Meilisearch prefix matching.
 
-    Uses ``matchingStrategy: "last"`` so the final word the user is still
-    typing is matched as a prefix. Returns display text (with diacritics)
-    from matching chunks, deduplicated, optionally filtered by ``kind``.
+    Meilisearch always matches the final word — the one still being typed —
+    as a prefix, so suggestions need no verification. ``matchingStrategy`` is
+    ``all`` here too: with ``last`` a rare word that matches one chunk is
+    dropped from the query and every chunk comes back as a suggestion.
+    Returns display text (with diacritics) from matching chunks, deduplicated,
+    optionally filtered by ``kind``.
     """
     normalized = normalize_for_index(query)
     if len(normalized) < SUGGEST_MIN_CHARS:
@@ -554,7 +666,7 @@ def _chunk_suggest(query: str, *, kind: str | None, limit: int) -> list[str]:
     options: dict[str, Any] = {
         "limit": limit * 3,
         "attributesToRetrieve": ["text"],
-        "matchingStrategy": "last",
+        "matchingStrategy": "all",
     }
     if kind:
         options["filter"] = [f'kind = "{kind}"']
@@ -569,7 +681,7 @@ def _chunk_suggest(query: str, *, kind: str | None, limit: int) -> list[str]:
     results: list[str] = []
     for hit in response["hits"]:
         text: str = hit.get("text", "")
-        short = text[:80].strip()
+        short = _snippet(text)
         if short and short not in seen:
             seen.add(short)
             results.append(short)
@@ -583,7 +695,7 @@ def _mushaf_suggest(query: str, limit: int) -> list[str]:
 
     Prefix-matches the last typed word like :func:`_chunk_suggest`, then
     hydrates the ranked ayah ids to their Uthmani display text — the ayahs
-    index stores only the normalized form.
+    index stores only the normalized forms.
     """
     normalized = normalize_for_index(query)
     if len(normalized) < SUGGEST_MIN_CHARS:
@@ -591,7 +703,7 @@ def _mushaf_suggest(query: str, limit: int) -> list[str]:
     options: dict[str, Any] = {
         "limit": limit * 3,
         "attributesToRetrieve": ["id"],
-        "matchingStrategy": "last",
+        "matchingStrategy": "all",
     }
     index = meili_client().index(ayahs_index_name())
     try:
@@ -604,7 +716,7 @@ def _mushaf_suggest(query: str, limit: int) -> list[str]:
     seen: set[str] = set()
     results: list[str] = []
     for match in _hydrate_verses(ids):
-        short = match.text_uthmani[:80].strip()
+        short = _snippet(match.text_uthmani)
         if short and short not in seen:
             seen.add(short)
             results.append(short)
@@ -648,7 +760,8 @@ def search(
     ``recitation`` searches the canonical mushaf text only (``ayah_matches`` +
     ``verse_matches``, no ASR chunks); ``khawatir`` searches the machine
     transcripts only (``results``, no mushaf text); ``None`` returns both.
-    Canonical text and ASR output are never mixed under one ``kind``.
+    Canonical text and ASR output are never mixed under one ``kind``. Both
+    corpora are searched as a strict phrase (see :func:`lexical_search`).
 
     Raises :class:`SearchParameterError` for an unusable query, an unknown
     ``kind``, or out-of-range pagination.
@@ -661,7 +774,7 @@ def search(
         raise SearchParameterError(f"page must be {MAX_PAGE} or less")
     if not 1 <= page_size <= MAX_PAGE_SIZE:
         raise SearchParameterError(f"page_size must be between 1 and {MAX_PAGE_SIZE}")
-    if not normalize_for_index(query):
+    if not _query_tokens(query):
         raise SearchParameterError("query must contain searchable text")
 
     if kind == SegmentKind.RECITATION:
@@ -675,9 +788,9 @@ def search(
             total=0,
         )
 
-    # Bounded by MAX_PAGE * MAX_PAGE_SIZE (API_CONTRACT.md amendment 2).
-    depth = max(CANDIDATE_POOL, page * page_size)
-    ranked, total = lexical_search(query, kind=kind, surah=surah, limit=depth)
+    # Every page is a slice of one verified pool of VERIFY_POOL candidates
+    # (API_CONTRACT.md amendments 2 and 10).
+    ranked, total = lexical_search(query, kind=kind, surah=surah)
 
     if kind == SegmentKind.KHAWATIR:
         return SearchResponse(

@@ -20,6 +20,11 @@ pytestmark = pytest.mark.django_db
 IMAN = KHAWATIR_TEXTS[0]  # الْإِيمَانُ بِاللَّهِ وَحْدَهُ ...
 SABR = KHAWATIR_TEXTS[1]  # الصَّبْرُ عِنْدَ الصَّدْمَةِ الْأُولَى
 HAJJ = RECITATION_TEXTS[1]  # الْحَجُّ عَرَفَةُ وَالطَّوَافُ سَبْعًا
+RAHMA = KHAWATIR_TEXTS[2]  # الرَّحْمَةُ فِي قُلُوبِ الْمُؤْمِنِينَ
+GAPPED = KHAWATIR_TEXTS[6]  # الصَّبْرُ الْجَمِيلُ، عِنْدَ الصَّدْمَةِ.
+REVERSED = KHAWATIR_TEXTS[7]  # عِنْدَ الصَّدْمَةِ الصَّبْرُ
+MUMINUN = KHAWATIR_TEXTS[8]  # الْمُؤْمِنُونَ إِخْوَةٌ
+LONG = KHAWATIR_TEXTS[11]  # longer than a suggestion snippet
 
 
 def _ids(query: str, **kwargs: object) -> list[int]:
@@ -37,6 +42,16 @@ def test_ensure_chunks_index_configures_the_attributes(chunks_index: str) -> Non
         "surah",
     ]
     assert sorted(settings["sortableAttributes"]) == ["start_ms", "surah"]
+    assert settings["typoTolerance"]["minWordSizeForTypos"] == {"oneTypo": 4, "twoTypos": 8}
+    assert settings["rankingRules"] == services.RANKING_RULES
+
+
+def test_ensure_ayahs_index_configures_both_spellings_and_strictness(ayahs_index: str) -> None:
+    settings = services.meili_client().index(ayahs_index).get_settings()
+    assert settings["searchableAttributes"] == ["text_normalized", "text_imlaei_normalized"]
+    assert settings["filterableAttributes"] == ["surah"]
+    assert settings["typoTolerance"]["minWordSizeForTypos"] == {"oneTypo": 4, "twoTypos": 8}
+    assert settings["rankingRules"] == services.RANKING_RULES
 
 
 def test_ensure_chunks_index_is_idempotent(chunks_index: str) -> None:
@@ -75,11 +90,14 @@ def test_index_chunks_ignores_an_empty_batch(chunks_index: str) -> None:
     assert services.index_chunks([]) == 0
 
 
-def test_exact_phrase_ranks_its_own_chunk_first(indexed_corpus: CorpusFixture) -> None:
+def test_exact_phrase_returns_only_its_own_chunk(indexed_corpus: CorpusFixture) -> None:
+    """Meilisearch alone would also return the gapped and reversed chunks."""
     response = services.search("الصبر عند الصدمة")
-    assert response.results[0].chunk_id == indexed_corpus.chunk_for(SABR).pk
+    assert [result.chunk_id for result in response.results] == [
+        indexed_corpus.chunk_for(SABR).pk
+    ]
     assert response.results[0].text == SABR
-    assert response.total >= 1
+    assert response.total == 1
 
 
 @pytest.mark.parametrize(
@@ -110,8 +128,8 @@ def test_kind_filter_restricts_results_to_one_segment_kind(
         for chunk in indexed_corpus.chunks
         if chunk.transcript_id == indexed_corpus.khawatir.transcript.pk
     }
-    response = services.search("ال", kind=SegmentKind.KHAWATIR)
-    assert response.results
+    response = services.search("القلب", kind=SegmentKind.KHAWATIR)
+    assert len(response.results) == 3
     assert {result.chunk_id for result in response.results} <= khawatir_ids
     assert {result.kind for result in response.results} == {SegmentKind.KHAWATIR}
 
@@ -145,8 +163,8 @@ def test_khawatir_kind_never_returns_mushaf_text(
 
 
 def test_surah_filter_restricts_results_to_one_surah(indexed_corpus: CorpusFixture) -> None:
-    response = services.search("ال", surah=3)
-    assert response.results
+    response = services.search("القلب", surah=3)
+    assert len(response.results) == 1
     assert {result.surah for result in response.results} == {3}
 
 
@@ -187,16 +205,16 @@ def test_verse_search_returns_canonical_mushaf_hits(
 
 
 def test_pagination_walks_the_ranked_list(indexed_corpus: CorpusFixture) -> None:
-    ranked = _ids("ال")
-    assert len(ranked) > 2
+    ranked = _ids("القلب")
+    assert len(ranked) == 4
 
-    first = services.search("ال", page=1, page_size=2)
-    second = services.search("ال", page=2, page_size=2)
+    first = services.search("القلب", page=1, page_size=2)
+    second = services.search("القلب", page=2, page_size=2)
 
     assert [result.chunk_id for result in first.results] == ranked[:2]
     assert [result.chunk_id for result in second.results] == ranked[2:4]
     assert (first.page, second.page) == (1, 2)
-    assert first.total == second.total
+    assert first.total == second.total == 4
 
 
 def test_hits_deleted_from_the_database_are_dropped_from_the_page(
@@ -211,3 +229,105 @@ def test_hits_deleted_from_the_database_are_dropped_from_the_page(
 
     assert stale_id in _ids("الحج عرفة")
     assert [result.chunk_id for result in response.results] == []
+
+
+# --- Strict phrase semantics --------------------------------------------------
+
+
+def test_words_out_of_order_are_rejected(indexed_corpus: CorpusFixture) -> None:
+    assert _ids("عند الصبر") == []
+    assert _ids("الصدمة الصبر") == [indexed_corpus.chunk_for(REVERSED).pk]
+
+
+def test_gapped_words_are_rejected(indexed_corpus: CorpusFixture) -> None:
+    """Meilisearch's ``all`` strategy accepts the gapped chunk; the verifier does not."""
+    assert _ids("الصبر عند الصدمة") == [indexed_corpus.chunk_for(SABR).pk]
+    assert _ids("الجميل عند الصدمة") == [indexed_corpus.chunk_for(GAPPED).pk]
+
+
+def test_glued_punctuation_does_not_break_adjacency(indexed_corpus: CorpusFixture) -> None:
+    assert _ids("الصبر الجميل عند") == [indexed_corpus.chunk_for(GAPPED).pk]
+    assert set(_ids("عند الصدمة")) == {
+        indexed_corpus.chunk_for(text).pk for text in (SABR, GAPPED, REVERSED)
+    }
+
+
+def test_one_typo_on_a_five_letter_word_is_accepted(indexed_corpus: CorpusFixture) -> None:
+    assert _ids("الصبن عند الصدمة") == [indexed_corpus.chunk_for(SABR).pk]
+
+
+def test_transposition_is_one_edit(indexed_corpus: CorpusFixture) -> None:
+    """Pins Meilisearch's transposition-costs-one retrieval as much as ours."""
+    assert _ids("الصرب عند الصدمة") == [indexed_corpus.chunk_for(SABR).pk]
+
+
+def test_one_typo_on_a_three_letter_word_is_rejected(indexed_corpus: CorpusFixture) -> None:
+    assert _ids("الصبر عنت الصدمة") == []
+
+
+def test_two_typos_on_a_five_letter_word_are_rejected(indexed_corpus: CorpusFixture) -> None:
+    assert _ids("الظبن عند الصدمة") == []
+
+
+def test_two_typos_on_an_eight_letter_word_are_accepted(
+    indexed_corpus: CorpusFixture,
+) -> None:
+    assert _ids("قلوب الموممنون") == [indexed_corpus.chunk_for(RAHMA).pk]
+    assert _ids("قلوب الموممنوون") == []  # three edits
+
+
+def test_the_first_letter_must_match(indexed_corpus: CorpusFixture) -> None:
+    assert _ids("بلصبر عند الصدمة") == []
+    assert _ids("قلوب بلمومنين") == []  # even with a two-edit budget
+    assert _ids("قلوب المومنينن") == [indexed_corpus.chunk_for(RAHMA).pk]  # same edit, elsewhere
+
+
+def test_prefix_of_the_last_word_beyond_budget_is_rejected(
+    indexed_corpus: CorpusFixture,
+) -> None:
+    """Meilisearch prefix-matches the last word; the verifier only allows what
+    the typo budget allows (one missing letter on a 4+ letter word)."""
+    assert _ids("الصبر عند الصد") == []
+    assert _ids("الصبر عند الصدم") == [indexed_corpus.chunk_for(SABR).pk]
+    assert _ids("الص") == []
+
+
+def test_clitic_prefixes_are_different_words(indexed_corpus: CorpusFixture) -> None:
+    """``الله`` is not ``بالله``: exact words, and the extra letter is a
+    first-letter change."""
+    assert _ids("الله") == []
+    assert _ids("بالله") == [indexed_corpus.chunk_for(IMAN).pk]
+
+
+def test_exact_matches_rank_above_typo_matches(indexed_corpus: CorpusFixture) -> None:
+    rahma, muminun = (indexed_corpus.chunk_for(text).pk for text in (RAHMA, MUMINUN))
+    assert _ids("المؤمنين") == [rahma, muminun]
+    assert _ids("المؤمنون") == [muminun, rahma]
+
+
+def test_verse_search_is_strict_and_accepts_imlaei_spelling(
+    ayahs_index: str, indexed_quran: None, quran_slice: dict[int, Surah]
+) -> None:
+    """Holds against the fixture's four ayahs and against the full Quran the
+    quran suite's session fixture may have left in the database: ``نور السموت``
+    occurs only in 24:35, the gapped ``نور والارض`` and reversed ``السموت نور``
+    nowhere (``الله السموت``, say, is a real phrase in 29:44)."""
+    ayah = Ayah.objects.get(surah_id=24, number=35)  # ٱللَّهُ نُورُ ٱلسَّمَـٰوَٰتِ وَٱلْأَرْضِ
+    assert services.verse_search("نور السموت") == [ayah.pk]  # Uthmani spelling
+    assert services.verse_search("نور السماوات") == [ayah.pk]  # imlaei spelling
+    assert services.verse_search("نور والارض") == []  # gap
+    assert services.verse_search("السموت نور") == []  # order
+
+
+def test_suggestion_snippet_round_trips_under_strict_search(
+    indexed_corpus: CorpusFixture,
+) -> None:
+    """A clicked suggestion is searched verbatim, so it must be whole words."""
+    assert len(LONG) > services.SUGGEST_SNIPPET_CHARS
+    assert LONG[services.SUGGEST_SNIPPET_CHARS] != " "  # the cut would split a word
+    (snippet,) = services.suggest("الرزق")
+    assert len(snippet) <= services.SUGGEST_SNIPPET_CHARS
+    assert LONG.startswith(snippet) and LONG[len(snippet)] == " "
+    assert [result.chunk_id for result in services.search(snippet).results] == [
+        indexed_corpus.chunk_for(LONG).pk
+    ]

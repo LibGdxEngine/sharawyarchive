@@ -45,3 +45,16 @@ confirmed to pass a stream through.
 2. `NEXT_PUBLIC_SMART_STREAMING=1` in `.env.prod`, rebuild the frontend (`--build frontend`).
 3. Watch the `SmartQuery` admin list (status, cost, latency, feedback) — the v1 dashboard — and the
    daily spend (`SMART_DAILY_BUDGET_USD`).
+
+## Live smoke test (2026-09-02, real models, throwaway database, rolled back)
+
+Twelve passages built from the search-suite fixture corpus, embedded through OpenRouter (568
+tokens), then one `run_smart_search("ماذا قال الشيخ عن الصبر عند الصدمة الأولى؟")` with debug on:
+
+- every stage answered in the strict schema on the first try — planner `google/gemini-3.1-flash-lite`
+  (5 rewrites, e.g. «تفسير حديث إنما الصبر عند الصدمة الأولى»), reranker (same model), generator
+  `google/gemini-3.8-flash`; no warnings, no verifier notes;
+- status `not_found` with the model's honest sentence (the fixture chunks only *mention* the phrase),
+  two citations both resolved to the exact words: 30 000–33 900 ms and 180 000–183 900 ms, listen URLs
+  `/listen/1?t=30000` / `?t=180000`; three Arabic follow-ups; four passages returned;
+- latency plan 1.3 s · retrieve 1.0 s · rerank 1.2 s · generate 5.9 s · total 9.4 s; cost $0.0075.

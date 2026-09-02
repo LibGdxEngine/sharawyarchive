@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import SearchAutocomplete, { type SearchKind } from "./SearchAutocomplete";
+import { useSearchMode } from "@/components/search/useSearchMode";
 
 const EXAMPLES: { glyph: string; glyphClass: string; label: string }[] = [
   {
@@ -40,6 +41,7 @@ const EXAMPLES: { glyph: string; glyphClass: string; label: string }[] = [
 export default function SearchHero() {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<SearchKind>("all");
+  const [mode, setMode] = useSearchMode();
 
   const fillRecommendation = (label: string) => {
     setQuery(label);
@@ -57,6 +59,8 @@ export default function SearchHero() {
         onChange={setQuery}
         kind={kind}
         onKindChange={setKind}
+        mode={mode}
+        onModeChange={setMode}
       />
 
       <div className="mt-4 flex flex-col items-center gap-2">

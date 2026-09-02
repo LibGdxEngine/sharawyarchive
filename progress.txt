@@ -125,3 +125,9 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - generate.py (strict GeneratedAnswer, one regeneration on schema/non-Arabic), verify.py (quotes located in TranscriptWord rows by rapidfuzz alignment → word ms; markers renumbered/orphans stripped; unmarked sentences dropped; [[ayah:S:A]] validated and hydrated from quran.Ayah; status downgrades; VerifyError on empty/non-Arabic), pipeline.py (Deadline 40 s, cache, SmartQuery row per request, degraded keeps passages, budget notice).
 - POST /api/search/smart/ (503 when off, 400, 429 rate 20/h via hashed-ident ScopedRateThrottle, 429 in-flight cap with Retry-After 10, staff-only debug, no-store) + POST /api/search/smart/{id}/feedback/ (60/h). Contract amendment 15; serializers for make types.
 - Prod: gunicorn gthread ×8 threads, timeout 75; CONN_MAX_AGE 60 + health checks. smart_answer command. Backend suite 921 passed; ruff clean.
+
+## Smart search — Phase 5 frontend (2026-09-02)
+- Mode toggle («بحث دقيق / بحث ذكي») on the landing box, the site header (keeps mode on re-search) and /search; remembered in localStorage (search:mode); ?mode=smart in the URL, exact links unchanged.
+- Smart results island (client, key={question}): useSmartSearch (abortable, staged copy, 60 s client timeout), safe answer parser ([n] chips → citation cards, [[ayah:S:A]] → canonical verse from ayah_refs or the verse endpoint, else nothing), CitationCard with ms play + listen link, PassageList always shown (degraded included) with the machine-transcript marker, followups, feedback, disclaimer.
+- fetchTransport / SmartEvent seam for Phase 7 streaming. usePlaySegmentAt extracted from ChunkResultList.
+- Tests: 366 (component tests via testing-library + happy-dom, vitest.setup cleanup); tsc, eslint, next build clean.

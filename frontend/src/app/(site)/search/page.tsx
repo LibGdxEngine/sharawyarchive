@@ -1,9 +1,12 @@
 import Link from "next/link";
 import ChunkResultList from "@/components/ChunkResultList";
 import ErrorNote from "@/components/ErrorNote";
+import SearchModeBar from "@/components/search/SearchModeBar";
+import SmartResults from "@/components/search/SmartResults";
 import { AyahSeal, OrnamentDivider } from "@/components/surah/SurahOrnaments";
 import { search } from "@/lib/api";
 import { kindLabel, toArabicIndic } from "@/lib/format";
+import { parseSearchMode } from "@/lib/search-mode";
 import type { AyahMatch, SearchResponse, VerseMatch } from "@/types/models";
 
 // Search responses are `Cache-Control: no-store` (API_CONTRACT.md) and depend
@@ -94,6 +97,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const params = await searchParams;
   const query = firstValue(params.q).trim();
   const kind = firstKind(params.kind);
+  const mode = parseSearchMode(params.mode);
+  const debug = firstValue(params.debug) === "1";
 
   if (query === "") {
     return (
@@ -104,6 +109,24 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             اكتب عبارة في حقل البحث للبدء.
           </p>
         </div>
+      </main>
+    );
+  }
+
+  // Smart mode is a client island: the answer takes up to 40 s and the
+  // reader can abort it, neither of which a server render could offer. No
+  // exact search runs for it.
+  if (mode === "smart") {
+    return (
+      <main className="search-page reading-column page-shell pt-8">
+        <header className="search-hero">
+          <h1 className="text-lg font-semibold">
+            سؤال للأرشيف: «{query}»
+          </h1>
+          <SearchModeBar query={query} kind={kind} mode={mode} />
+          <div aria-hidden className="search-hero-rule mt-3" />
+        </header>
+        <SmartResults key={query} question={query} kind={kind} debug={debug} />
       </main>
     );
   }
@@ -140,6 +163,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
           {summaryLine(response)}
         </p>
+        <SearchModeBar query={query} kind={kind} mode={mode} />
         <div aria-hidden className="search-hero-rule mt-3" />
       </header>
 

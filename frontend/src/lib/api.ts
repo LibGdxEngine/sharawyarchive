@@ -13,6 +13,10 @@ import type {
   CorrectionResponse,
   ClipCreateResponse,
   Clip,
+  SmartFeedbackPayload,
+  SmartFeedbackResponse,
+  SmartFilters,
+  SmartResponse,
 } from "@/types/models";
 
 const BASE_URL = (
@@ -163,6 +167,49 @@ export function search(params: SearchParams): Promise<SearchResponse> {
   if (params.surah !== undefined) sp.set("surah", String(params.surah));
   if (params.page !== undefined) sp.set("page", String(params.page));
   return apiFetch<SearchResponse>(`/search/?${sp.toString()}`);
+}
+
+// ---------------------------------------------------------------------------
+// Smart search
+// ---------------------------------------------------------------------------
+
+export interface SmartSearchOptions {
+  signal?: AbortSignal;
+  filters?: SmartFilters;
+  /** Honoured by the API for staff sessions only. */
+  debug?: boolean;
+}
+
+/**
+ * Ask the archive a question (API_CONTRACT.md amendment 15).
+ *
+ * Runs for up to 40 s server-side, so callers pass an AbortSignal and must be
+ * client-side — a server render waiting on this would hold the whole route.
+ * Throws ApiError: 429 (rate or concurrency cap, with `retryAfter`), 503
+ * (feature off), 400 (bad question).
+ */
+export function smartSearch(
+  question: string,
+  { signal, filters, debug }: SmartSearchOptions = {}
+): Promise<SmartResponse> {
+  const body: Record<string, unknown> = { question };
+  if (filters !== undefined) body.filters = filters;
+  if (debug) body.debug = true;
+  return apiFetch<SmartResponse>("/search/smart/", {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+export function postSmartFeedback(
+  queryId: string,
+  payload: SmartFeedbackPayload
+): Promise<SmartFeedbackResponse> {
+  return apiFetch<SmartFeedbackResponse>(`/search/smart/${queryId}/feedback/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 // ---------------------------------------------------------------------------

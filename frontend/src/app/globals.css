@@ -2082,3 +2082,153 @@ select.player-chip {
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================
+   Smart search («بحث ذكي») — mode toggle, answer, citations
+   ============================================================ */
+
+/* Quran ink outside the scoped pages: the inline verse in a smart answer. */
+:root {
+  --color-quran-ink: #3f3626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-quran-ink: #eadfc5;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-quran-ink: #eadfc5;
+}
+
+/* Segmented mode control — the .landing-kind recipe in neutral tokens; the
+   landing and the search page recolour it through --mode-* below. */
+.search-mode {
+  display: inline-flex;
+  background: var(--mode-bg, var(--color-bg-subtle));
+  border: 1px solid var(--mode-border, var(--color-border));
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.search-mode button {
+  border: 0;
+  background: transparent;
+  color: var(--mode-ink, var(--color-ink-muted));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.search-mode button[aria-pressed="true"] {
+  background: var(--mode-active-bg, var(--color-ink));
+  color: var(--mode-active-ink, var(--color-surface));
+}
+
+.search-mode button:focus-visible {
+  outline: 2px solid var(--mode-active-bg, var(--color-accent));
+  outline-offset: 2px;
+}
+
+.landing .search-mode {
+  --mode-bg: var(--landing-chip-bg);
+  --mode-border: var(--landing-chip-border);
+  --mode-ink: var(--landing-ink-3);
+  --mode-active-bg: var(--landing-gold);
+  --mode-active-ink: var(--landing-btn-ink);
+}
+
+.search-page .search-mode {
+  --mode-bg: var(--srch-veil);
+  --mode-border: var(--srch-card-border);
+  --mode-active-bg: var(--srch-gold);
+  --mode-active-ink: var(--srch-gold-ink);
+}
+
+/* Status line above the answer. */
+.smart-banner {
+  border-inline-start: 3px solid var(--srch-gold, var(--color-border));
+  padding: 0.5rem 0.9rem;
+  border-radius: 0 10px 10px 0;
+  background: var(--srch-veil, var(--color-bg-subtle));
+  font-size: 0.875rem;
+  color: var(--color-ink-muted);
+}
+
+.smart-banner[data-status="degraded"] {
+  border-inline-start-color: var(--color-ink-faint);
+}
+
+.smart-paragraph + .smart-paragraph {
+  margin-top: 0.6rem;
+}
+
+/* Citation chip inside the prose: a small numbered pill. */
+.smart-cite-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  margin-inline: 0.15rem;
+  padding-inline: 0.3rem;
+  border: 1px solid var(--srch-card-border, var(--color-border));
+  border-radius: 999px;
+  background: var(--srch-veil, var(--color-bg-subtle));
+  color: var(--srch-gold-deep, var(--color-ink-muted));
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 0.2em;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.smart-cite-chip:hover,
+.smart-cite-chip:focus-visible {
+  background: var(--srch-gold, var(--color-ink));
+  color: var(--srch-gold-ink, var(--color-surface));
+}
+
+/* One citation card; `data-active` lights the one a chip pointed at. */
+.smart-cite-card {
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.smart-cite-card[data-active="true"],
+.smart-cite-card:focus-visible {
+  background: var(--srch-card, var(--color-bg-subtle));
+  border-color: var(--srch-card-border, var(--color-border));
+  outline: none;
+}
+
+.smart-cite-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: var(--srch-gold, var(--color-ink));
+  color: var(--srch-gold-ink, var(--color-surface));
+  font-weight: 600;
+}
+
+/* The verse inside an answer — Quran ink, never the prose colour. */
+.smart-ayah .quran-text {
+  color: var(--srch-quran-ink, var(--color-quran-ink));
+}
+
+.smart-ayah-mark {
+  color: var(--srch-gold, var(--color-ink-muted));
+  letter-spacing: -0.05em;
+}

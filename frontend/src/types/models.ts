@@ -249,3 +249,79 @@ export interface Clip {
   /** The Arabic name the browser will save {@link Clip.download_url} under. */
   download_filename: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Smart search (API_CONTRACT.md amendment 15)
+// ---------------------------------------------------------------------------
+
+export type SmartStatus = "answered" | "partial" | "not_found" | "degraded";
+
+/**
+ * One verified quote: the milliseconds are those of the transcript words it
+ * spans, and `quote_display` is machine-transcript text — shown only with the
+ * «نص آلي» marker.
+ */
+export interface SmartCitation {
+  n: number;
+  passage_id: number;
+  chunk_id: number | null;
+  segment_id: number;
+  segment_title: string;
+  surah: number | null;
+  ayah_start: number | null;
+  ayah_end: number | null;
+  start_ms: number;
+  end_ms: number;
+  quote_display: string;
+  listen_url: string;
+}
+
+export interface SmartPassage {
+  passage_id: number;
+  chunk_id: number | null;
+  segment_id: number;
+  segment_title: string;
+  surah: number | null;
+  ayah_start: number | null;
+  ayah_end: number | null;
+  start_ms: number;
+  end_ms: number;
+  excerpt_display: string;
+  score: number;
+}
+
+/** Canonical verse text from the quran app — the only text that may render as Quran. */
+export interface SmartAyah {
+  surah: number;
+  ayah: number;
+  surah_name_ar: string;
+  text_uthmani: string;
+}
+
+export interface SmartResponse {
+  query_id: string;
+  mode: "smart";
+  status: SmartStatus;
+  /** Arabic prose with `[n]` citation markers and `[[ayah:S:A]]` placeholders; null when degraded. */
+  answer_md: string | null;
+  citations: SmartCitation[];
+  passages: SmartPassage[];
+  ayah_refs: SmartAyah[];
+  followups: string[];
+  cache_hit: boolean;
+  debug: Record<string, unknown> | null;
+}
+
+export interface SmartFilters {
+  surah?: number;
+  source_id?: number;
+}
+
+export interface SmartFeedbackPayload {
+  vote: "up" | "down";
+  note?: string;
+}
+
+export interface SmartFeedbackResponse {
+  status: "recorded";
+}

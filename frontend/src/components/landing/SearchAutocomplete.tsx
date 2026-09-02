@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import SearchModeToggle from "@/components/search/SearchModeToggle";
+import { searchHref, SEARCH_PLACEHOLDER, type SearchMode } from "@/lib/search-mode";
 
 export type SearchKind = "all" | "recitation" | "khawatir";
 
@@ -16,6 +18,8 @@ interface SearchAutocompleteProps {
   onChange: (value: string) => void;
   kind: SearchKind;
   onKindChange: (kind: SearchKind) => void;
+  mode: SearchMode;
+  onModeChange: (mode: SearchMode) => void;
 }
 
 /**
@@ -28,6 +32,8 @@ export default function SearchAutocomplete({
   onChange,
   kind,
   onKindChange,
+  mode,
+  onModeChange,
 }: SearchAutocompleteProps) {
   const router = useRouter();
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -71,13 +77,10 @@ export default function SearchAutocomplete({
     return () => clearTimeout(timer);
   }, [value, fetchSuggestions]);
 
-  const searchHref = (q: string, k: SearchKind) =>
-    k === "all" ? `/search?q=${encodeURIComponent(q)}` : `/search?q=${encodeURIComponent(q)}&kind=${k}`;
-
   const selectSuggestion = (text: string) => {
     setIsOpen(false);
     onChange(text);
-    router.push(searchHref(text, kind));
+    router.push(searchHref(text, kind, mode));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -160,7 +163,7 @@ export default function SearchAutocomplete({
             id="site-search"
             name="q"
             type="search"
-            placeholder="ابحث بآيةٍ أو كلمةٍ أو موضوع…"
+            placeholder={SEARCH_PLACEHOLDER[mode]}
             autoComplete="off"
             autoFocus
             value={value}
@@ -176,24 +179,28 @@ export default function SearchAutocomplete({
           </button>
         </div>
 
-        <div className="flex items-center justify-between gap-2 ps-2">
-          <span
-            className="landing-kind"
-            role="group"
-            aria-label="نوع المحتوى"
-          >
-            {KIND_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={kind === option.value}
-                onClick={() => onKindChange(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
+        <div className="flex flex-wrap items-center justify-between gap-2 ps-2">
+          <span className="flex flex-wrap items-center gap-2">
+            <span
+              className="landing-kind"
+              role="group"
+              aria-label="نوع المحتوى"
+            >
+              {KIND_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={kind === option.value}
+                  onClick={() => onKindChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </span>
+            <SearchModeToggle mode={mode} onChange={onModeChange} className="landing-mode" />
           </span>
           {kind !== "all" && <input type="hidden" name="kind" value={kind} />}
+          {mode === "smart" && <input type="hidden" name="mode" value="smart" />}
           <span className="hidden text-xs text-[var(--landing-ink-4)] sm:inline">
             اضغط / للبحث السريع
           </span>

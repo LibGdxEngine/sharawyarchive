@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { getSegment } from "@/lib/api";
-import { useAudioStore } from "@/lib/audio-store";
+import { usePlaySegmentAt } from "@/components/player/usePlaySegmentAt";
 import { kindLabel } from "@/lib/format";
 import type { SearchChunkResult } from "@/types/models";
 
@@ -20,7 +18,7 @@ interface ChunkResultListProps {
  * without saying so. On /search these snippets sit directly under authentic
  * Quran text, which makes the distinction the most important thing on the page.
  */
-const MACHINE_TRANSCRIPT_NOTE =
+export const MACHINE_TRANSCRIPT_NOTE =
   "نتائج من التفريغ الآلي — قد تحتوي على أخطاء";
 
 /**
@@ -53,34 +51,14 @@ export default function ChunkResultList({
   results,
   emptyLabel,
 }: ChunkResultListProps) {
-  const load = useAudioStore((s) => s.load);
-  const [pendingChunkId, setPendingChunkId] = useState<number | null>(null);
-  const [failedChunkId, setFailedChunkId] = useState<number | null>(null);
+  const { play, pendingKey: pendingChunkId, failedKey: failedChunkId } = usePlaySegmentAt();
 
   if (results.length === 0) {
     return <p className="py-8 text-sm text-[var(--color-ink-muted)]">{emptyLabel}</p>;
   }
 
-  const playHere = async (result: SearchChunkResult) => {
-    setFailedChunkId(null);
-    setPendingChunkId(result.chunk_id);
-    try {
-      const segment = await getSegment(result.segment_id);
-      load(
-        {
-          segmentId: segment.id,
-          title: segment.title,
-          audioUrl: segment.audio_url,
-          durationMs: segment.duration_ms,
-        },
-        { startMs: result.start_ms, autoplay: true }
-      );
-    } catch {
-      setFailedChunkId(result.chunk_id);
-    } finally {
-      setPendingChunkId(null);
-    }
-  };
+  const playHere = (result: SearchChunkResult) =>
+    void play(result.chunk_id, result.segment_id, result.start_ms);
 
   return (
     <>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { parseSearchMode, SEARCH_PLACEHOLDER, type SearchMode } from "@/lib/search-mode";
 import { SITE_NAME } from "@/lib/site";
 
 const NAV_LINKS = [
@@ -42,6 +43,8 @@ interface SiteHeaderShellProps {
   activePath: string | null;
   /** Prefills the header search box, e.g. on /search. */
   defaultQuery: string;
+  /** Keeps a smart-mode search in smart mode when re-searched from the header. */
+  defaultMode?: SearchMode;
 }
 
 /**
@@ -55,6 +58,7 @@ interface SiteHeaderShellProps {
 export function SiteHeaderShell({
   activePath,
   defaultQuery,
+  defaultMode = "exact",
 }: SiteHeaderShellProps) {
   const [open, setOpen] = useState(false);
 
@@ -79,12 +83,13 @@ export function SiteHeaderShell({
             type="search"
             // Remount when the query changes so the prefill tracks the URL —
             // the header now lives in a layout that survives navigation.
-            key={defaultQuery}
+            key={`${defaultMode}:${defaultQuery}`}
             defaultValue={defaultQuery}
-            placeholder="ابحث في الأرشيف…"
+            placeholder={defaultMode === "smart" ? SEARCH_PLACEHOLDER.smart : "ابحث في الأرشيف…"}
             autoComplete="off"
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm placeholder:text-[var(--color-ink-faint)]"
           />
+          {defaultMode === "smart" ? <input type="hidden" name="mode" value="smart" /> : null}
         </form>
 
         <nav className="hidden shrink-0 items-center gap-4 text-sm sm:flex">
@@ -173,8 +178,15 @@ export function SiteHeaderShell({
 export default function SiteHeader() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const defaultQuery =
-    pathname === "/search" ? (searchParams.get("q") ?? "") : "";
+  const onSearch = pathname === "/search";
+  const defaultQuery = onSearch ? (searchParams.get("q") ?? "") : "";
+  const defaultMode = onSearch ? parseSearchMode(searchParams.get("mode")) : "exact";
 
-  return <SiteHeaderShell activePath={pathname} defaultQuery={defaultQuery} />;
+  return (
+    <SiteHeaderShell
+      activePath={pathname}
+      defaultQuery={defaultQuery}
+      defaultMode={defaultMode}
+    />
+  );
 }

@@ -99,3 +99,26 @@ class RetrievalResult:
 
 
 __all__ += ["RetrievalResult"]
+
+
+@dataclass
+class FullResult:
+    """One golden item through the whole pipeline."""
+
+    id: str
+    expected_status: str
+    status: str = ""
+    ranked_segment_ids: list[int] = field(default_factory=list)
+    hit_rank: int | None = None
+    citations: int = 0
+    citations_dropped: int = 0
+    sentences: int = 0
+    unsupported: int = 0
+    contradicted: int = 0
+    judged: bool = False
+    latency_ms: int = 0
+    cost_usd: str = "0"
+    error: str = ""
+
+
+__all__ += ["FullResult"]

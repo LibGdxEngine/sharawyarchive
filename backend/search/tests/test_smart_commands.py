@@ -323,10 +323,85 @@ def test_smart_eval_rerank_stage_scores_what_the_generator_would_read(
     assert "rerank: n=1 recall@8=1.000" in out
 
 
-def test_smart_eval_refuses_later_stages_and_unlabelled_sets(built: int, tmp_path: Path) -> None:
-    with pytest.raises(CommandError, match="later phase"):
-        _run("smart_eval", "--stage", "full")
+def test_smart_eval_full_stage_reports_statuses_and_gates(
+    built: int, corpus: CorpusFixture, tmp_path: Path
+) -> None:
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "id": "hit",
+                        "question": "الصبر عند الصدمة الأولى",
+                        "expected_segment_ids": [corpus.khawatir.pk],
+                        "expected_status": "answered",
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {"id": "abstain", "question": "xyzzy plugh", "expected_status": "not_found"},
+                    ensure_ascii=False,
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "report.json"
 
+    out, _ = _run(
+        "smart_eval",
+        "--stage",
+        "full",
+        "--no-llm",
+        "--golden",
+        str(golden),
+        "--out",
+        str(report_path),
+    )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["run"]["stage"] == "full" and report["run"]["judge"] is False
+    assert report["run"]["models"]["judge"] is None
+    by_id = {item["id"]: item for item in report["items"]}
+    # Without a provider nothing is generated: retrieval hits degrade, misses abstain.
+    assert by_id["hit"]["status"] == "degraded" and by_id["hit"]["hit_rank"] == 1
+    assert by_id["abstain"]["status"] == "not_found" and by_id["abstain"]["hit_rank"] is None
+    summary = report["summary"]
+    assert summary["n"] == 2 and summary["errors"] == 0 and summary["labelled"] == 1
+    assert summary["recall_at_8"] == 1.0
+    assert summary["abstention_accuracy"] == 1.0
+    assert summary["confusion"] == {"answered": {"degraded": 1}, "not_found": {"not_found": 1}}
+    assert summary["citation_validity"] is None and summary["unsupported_ratio"] is None
+    assert report["gates"]["recall_at_8"] is True
+    assert report["gates"]["citation_validity"] is None
+    assert report["gates"]["latency_p95_ms"] in {True, False}
+    assert "gates: passed" in out and "full: n=2" in out
+    assert "text" not in json.dumps(report["items"])
+
+
+def test_smart_eval_full_refuses_judge_without_a_provider(built: int) -> None:
+    with pytest.raises(CommandError, match="--judge"):
+        _run("smart_eval", "--stage", "full", "--no-llm", "--judge")
+
+
+def test_smart_label_lists_segments_once_with_an_excerpt(
+    built: int, corpus: CorpusFixture
+) -> None:
+    out, _ = _run("smart_label", "الصبر عند الصدمة", "--no-llm", "--json")
+
+    payload = json.loads(out)
+    ids = [item["segment_id"] for item in payload["segments"]]
+    assert ids[0] == corpus.khawatir.pk and len(ids) == len(set(ids))
+    first = payload["segments"][0]
+    assert first["title"] == "خواطر البقرة" and first["surah"] == 2
+    assert isinstance(first["start_ms"], int) and first["excerpt"]
+
+    out, _ = _run("smart_label", "الصبر عند الصدمة", "--no-llm")
+    assert f"segment {corpus.khawatir.pk}" in out and "expected_segment_ids" in out
+
+
+def test_smart_eval_refuses_unlabelled_sets(built: int, tmp_path: Path) -> None:
     golden = tmp_path / "golden.jsonl"
     golden.write_text('{"id": "a", "question": "q", "expected_status": "not_found"}\n')
     with pytest.raises(CommandError, match="no labelled items"):

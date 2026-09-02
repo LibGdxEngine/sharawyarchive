@@ -205,6 +205,8 @@ OPENROUTER_BASE_URL = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.
 SMART_PLANNER_MODEL = os.environ.get('SMART_PLANNER_MODEL', 'google/gemini-3.1-flash-lite')
 SMART_RERANK_MODEL = os.environ.get('SMART_RERANK_MODEL', 'google/gemini-3.1-flash-lite')
 SMART_GENERATOR_MODEL = os.environ.get('SMART_GENERATOR_MODEL', 'google/gemini-3.8-flash')
+# Offline evaluation only (manage.py smart_eval --judge); never on the request path.
+SMART_JUDGE_MODEL = os.environ.get('SMART_JUDGE_MODEL', 'google/gemini-3.8-flash')
 # Query and passage vectors MUST come from the same model and dimension; the
 # tag "<model>@<dims>" is stored on every embedded row and in every cache key.
 SMART_EMBEDDING_MODEL = os.environ.get('SMART_EMBEDDING_MODEL', 'qwen/qwen3-embedding-8b')

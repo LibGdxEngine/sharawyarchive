@@ -131,3 +131,7 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 - Smart results island (client, key={question}): useSmartSearch (abortable, staged copy, 60 s client timeout), safe answer parser ([n] chips → citation cards, [[ayah:S:A]] → canonical verse from ayah_refs or the verse endpoint, else nothing), CitationCard with ms play + listen link, PassageList always shown (degraded included) with the machine-transcript marker, followups, feedback, disclaimer.
 - fetchTransport / SmartEvent seam for Phase 7 streaming. usePlaySegmentAt extracted from ChunkResultList.
 - Tests: 366 (component tests via testing-library + happy-dom, vitest.setup cleanup); tsc, eslint, next build clean.
+
+## Smart search — Phase 6 eval tooling (2026-09-02)
+- smart_label (segments behind the fused candidates, for labelling), smart_eval --stage full (status vs expected, abstention accuracy + confusion, citation validity, latency, cost, optional --judge via SMART_JUDGE_MODEL with the budget check off), report.summarize()/gates() with the ship gates (recall@8 ≥ .80, abstention ≥ .90, citation validity ≥ .95, unsupported ≤ 5 %, p95 ≤ 15 s).
+- The eval run itself waits for the prod rollout (passages built + embedded) and the owner's 60–100 golden items. SMART_ENABLED stays off.

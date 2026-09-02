@@ -168,16 +168,18 @@ def chat_json[T: BaseModel](
     reasoning_effort: str | None = None,
     temperature: float = 0.0,
     max_tokens: int = 1200,
+    check_budget: bool = True,
 ) -> tuple[T, Usage]:
     """One chat completion that must come back as a ``schema`` instance.
 
     ``role`` only labels errors and logs (``planner``, ``reranker``, …).
     Raises :class:`BudgetExhausted` before calling when today's cap is
-    reached, :class:`LLMTimeout` when the call or the deadline runs out,
-    :class:`LLMSchemaError` when the answer does not validate, and
+    reached (unless ``check_budget`` is off — offline evaluation spends from
+    its own pocket), :class:`LLMTimeout` when the call or the deadline runs
+    out, :class:`LLMSchemaError` when the answer does not validate, and
     :class:`LLMError` for anything else the provider does.
     """
-    if budget.over_budget():
+    if check_budget and budget.over_budget():
         raise BudgetExhausted(f"{role}: daily smart-search budget reached")
     timeout = _call_timeout(timeout_s, deadline)
     extra_body: dict[str, Any] = {

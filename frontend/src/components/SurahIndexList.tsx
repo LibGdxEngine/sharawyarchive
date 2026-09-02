@@ -463,15 +463,6 @@ export default function SurahIndexList({
           />
         </span>
 
-        <button
-          type="button"
-          className="surah-toggle"
-          aria-pressed={filters.hasAudio}
-          onClick={() => update({ hasAudio: !filters.hasAudio })}
-        >
-          بها صوت
-        </button>
-
         {activeCount > 0 ? (
           <button
             type="button"

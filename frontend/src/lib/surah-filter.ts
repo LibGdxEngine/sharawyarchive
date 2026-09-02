@@ -24,8 +24,6 @@ export interface SurahFilters {
   juz: number | null;
   /** Show only surahs whose mushaf-page span covers this page. */
   page: number | null;
-  /** Show only surahs that have at least one segment. */
-  hasAudio: boolean;
 }
 
 export const EMPTY_FILTERS: SurahFilters = {
@@ -33,7 +31,6 @@ export const EMPTY_FILTERS: SurahFilters = {
   place: "all",
   juz: null,
   page: null,
-  hasAudio: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -85,7 +82,6 @@ export function filterSurahs(
     ) {
       return false;
     }
-    if (filters.hasAudio && surah.segment_count <= 0) return false;
     return true;
   });
 }
@@ -97,7 +93,6 @@ export function activeFilterCount(filters: SurahFilters): number {
   if (filters.place !== "all") count += 1;
   if (filters.juz !== null) count += 1;
   if (filters.page !== null) count += 1;
-  if (filters.hasAudio) count += 1;
   return count;
 }
 
@@ -142,13 +137,11 @@ export const MAX_PAGE = 604;
  */
 export function filtersFromParams(params: RawParams): SurahFilters {
   const place = readParam(params, "place");
-  const audio = readParam(params, "audio");
   return {
     q: readParam(params, "q") ?? "",
     place: place === "makkah" || place === "madinah" ? place : "all",
     juz: readBounded(params, "juz", MAX_JUZ),
     page: readBounded(params, "page", MAX_PAGE),
-    hasAudio: audio === "1",
   };
 }
 
@@ -160,6 +153,5 @@ export function filtersToParams(filters: SurahFilters): URLSearchParams {
   if (filters.place !== "all") params.set("place", filters.place);
   if (filters.juz !== null) params.set("juz", String(filters.juz));
   if (filters.page !== null) params.set("page", String(filters.page));
-  if (filters.hasAudio) params.set("audio", "1");
   return params;
 }

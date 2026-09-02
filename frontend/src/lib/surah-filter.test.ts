@@ -116,20 +116,12 @@ describe("filterSurahs", () => {
     expect(filterSurahs(ALL, withFilters({ page: 300 }))).toEqual([]);
   });
 
-  it("filters to surahs that actually have audio", () => {
-    expect(numbers(filterSurahs(ALL, withFilters({ hasAudio: true })))).toEqual([
-      1, 114,
-    ]);
-  });
-
   it("combines filters conjunctively", () => {
     expect(
-      numbers(
-        filterSurahs(ALL, withFilters({ place: "makkah", hasAudio: true, juz: 30 }))
-      )
+      numbers(filterSurahs(ALL, withFilters({ place: "makkah", juz: 30 })))
     ).toEqual([114]);
     expect(
-      filterSurahs(ALL, withFilters({ place: "madinah", hasAudio: true }))
+      filterSurahs(ALL, withFilters({ place: "madinah", juz: 30 }))
     ).toEqual([]);
   });
 });
@@ -146,9 +138,9 @@ describe("activeFilterCount", () => {
   it("counts each narrowing filter once", () => {
     expect(
       activeFilterCount(
-        withFilters({ q: "يس", place: "makkah", juz: 23, page: 440, hasAudio: true })
+        withFilters({ q: "يس", place: "makkah", juz: 23, page: 440 })
       )
-    ).toBe(5);
+    ).toBe(4);
   });
 });
 
@@ -163,7 +155,6 @@ describe("URL contract", () => {
       place: "madinah",
       juz: 2,
       page: 25,
-      hasAudio: true,
     });
 
     expect(filtersFromParams(filtersToParams(filters))).toEqual(filters);
@@ -175,8 +166,8 @@ describe("URL contract", () => {
 
   it("reads the record shape a server component receives", () => {
     expect(
-      filtersFromParams({ juz: "30", place: "makkah", audio: "1" })
-    ).toEqual(withFilters({ juz: 30, place: "makkah", hasAudio: true }));
+      filtersFromParams({ juz: "30", place: "makkah" })
+    ).toEqual(withFilters({ juz: 30, place: "makkah" }));
   });
 
   it("takes the first value when a param repeats", () => {
@@ -195,10 +186,5 @@ describe("URL contract", () => {
 
   it("falls back to 'all' for an unknown place", () => {
     expect(filtersFromParams({ place: "mars" }).place).toBe("all");
-  });
-
-  it("treats any audio value but 1 as off", () => {
-    expect(filtersFromParams({ audio: "true" }).hasAudio).toBe(false);
-    expect(filtersFromParams({ audio: "1" }).hasAudio).toBe(true);
   });
 });

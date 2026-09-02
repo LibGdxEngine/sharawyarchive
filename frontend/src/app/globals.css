@@ -775,31 +775,9 @@ body[data-verse-theme] {
 }
 
 .surah-segmented button:focus-visible,
-.surah-toggle:focus-visible,
 .surah-reset:focus-visible {
   outline: 2px solid var(--surah-gold);
   outline-offset: 2px;
-}
-
-.surah-toggle {
-  padding: 0.3rem 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: 9999px;
-  background: var(--surah-badge-bg);
-  color: var(--color-ink-muted);
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  cursor: pointer;
-  transition:
-    background-color 0.15s,
-    color 0.15s,
-    border-color 0.15s;
-}
-
-.surah-toggle[aria-pressed="true"] {
-  border-color: var(--surah-gold);
-  background: var(--surah-gold);
-  color: var(--surah-gold-ink);
 }
 
 .surah-reset {

@@ -204,3 +204,42 @@ search 30/min anon; corrections 10/hour; clips 5/hour → 429 with `Retry-After`
     `verse_matches` follows the same rules over the mushaf text. `total`
     still counts verified chunks, now over up to two Meilisearch pools
     (raw and stemmed words, 1000 each).
+15. **Smart search** (2026-09-02): `POST /api/search/smart/` answers a
+    question from the machine transcripts with a cited, verified answer.
+    Body: `{ "question": "…" (1–500 chars), "filters"?: { "surah"?, "source_id"? },
+    "debug"?: bool }`. Answer `200`:
+    `{ "query_id", "mode": "smart", "status", "answer_md", "citations", "passages",
+    "ayah_refs", "followups", "cache_hit", "debug" }` where
+    * `status` is `answered` | `partial` | `not_found` | `degraded`;
+      `degraded` means no verified answer could be produced (provider failure,
+      time or daily budget) — `answer_md` is then `null` or a short notice and
+      `passages` still lists the best retrieved passages;
+    * `answer_md` is Arabic text whose sentences end in markers `[n]` naming
+      `citations[n-1]`; a Quran reference appears only as the placeholder
+      `[[ayah:S:A]]`, never as text (rule 1), and its canonical text is in
+      `ayah_refs` (`surah`, `ayah`, `surah_name_ar`, `text_uthmani`, from the
+      Tanzil import);
+    * every citation was located in the transcript words and carries the
+      integer milliseconds of the words it quotes (`start_ms`, `end_ms`),
+      `chunk_id`, `segment_id`, `segment_title`, `surah`/`ayah_start`/`ayah_end`,
+      `quote_display` (the machine-transcript words, diacritics intact — always
+      to be shown with the machine-transcript marker) and
+      `listen_url` = `/listen/{segment_id}?t={start_ms}`;
+    * `passages` are the reranked passages the answer was written from
+      (`passage_id`, `chunk_id`, segment fields, `start_ms`, `end_ms`,
+      `excerpt_display`, `score`), machine transcript like everything else;
+    * `debug` is `null` for everyone but staff sessions that asked for it.
+
+    Errors: `400 { "detail" }` for a missing, blank or over-long question or a
+    bad filter; `503 { "detail" }` while the feature flag is off; `429` with
+    `Retry-After` both from the per-IP rate (`smart`: **20/hour**) and from the
+    concurrency cap (`SMART_MAX_INFLIGHT`, default 3, `Retry-After: 10`).
+    Responses are `Cache-Control: no-store`; the server keeps its own answer
+    cache (7 days, keyed by the normalized question and filters) and repeats a
+    cached answer with a fresh `query_id` and `cache_hit: true`.
+
+    `POST /api/search/smart/{query_id}/feedback/` with `{ "vote": "up"|"down",
+    "note"?: ≤1000 chars }` records a reader's verdict on one answer:
+    `201 { "status": "recorded" }`, `404` for an unknown id, `400` for a bad
+    vote; per-IP rate `smart_feedback`: **60/hour**. The "Throttles" table
+    gains both scopes.

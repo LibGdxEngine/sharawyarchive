@@ -20,7 +20,7 @@
 # Worker counts are trimmed to fit the shared host's memory budget.
 services:
   backend:
-    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 60
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 2 --worker-class gthread --threads 8 --timeout 75 --graceful-timeout 60
 
   celery_worker:
     command: celery -A core worker -l info -Q celery --concurrency=2

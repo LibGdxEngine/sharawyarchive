@@ -142,7 +142,13 @@ docker run --rm ... --entrypoint python sharawyarchive-backend manage.py embed_p
 
 `embed_passages` prints tokens and cost per 20 batches and stops at `--max-cost-usd`;
 re-running continues where it stopped. Check the result with
-`manage.py smart_retrieve "<question>" --json`.
+`manage.py smart_retrieve "<question>" --json`, and the whole pipeline with
+`manage.py smart_answer "<question>" --debug` (needs `OPENROUTER_API_KEY`).
+
+The backend runs gunicorn with `gthread` workers (8 threads each) because one
+smart-search request holds a thread for up to `SMART_REQUEST_BUDGET_S` (40 s);
+`SMART_MAX_INFLIGHT` (default 3) caps how many run at once and the per-IP rate is
+20/hour. `SMART_ENABLED=false` keeps `POST /api/search/smart/` answering 503.
 
 ## 6a. Clips (rendering and downloads)
 

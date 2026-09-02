@@ -9,7 +9,7 @@ Phase-by-phase documentation for the two-mode search work. One phase = one branc
 | 2 — Retrieval (`Passage` table, build/embed commands, hybrid retrieval) | [phase-2.md](phase-2.md) | `smart/phase-2-retrieval` |
 | 2b — Exact-mode tweaks (`light_stem`, `text_stem`, quotes) | [phase-2b.md](phase-2b.md) | `smart/phase-2b-exact-mode` |
 | 3 — Plan, rerank, context | [phase-3.md](phase-3.md) | `smart/phase-3-plan-rerank-context` |
-| 4 — Generate, verify, API | `phase-4.md` | `smart/phase-4-generate-verify-api` |
+| 4 — Generate, verify, API | [phase-4.md](phase-4.md) | `smart/phase-4-generate-verify-api` |
 | 5 — Frontend | `phase-5.md` | `smart/phase-5-frontend` |
 | 6 — Eval and tuning | `phase-6.md` + `eval-<YYYY-MM-DD>.json` | `smart/phase-6-eval` |
 | 7 — Streaming and prod | `phase-7.md` | `smart/phase-7-streaming` |

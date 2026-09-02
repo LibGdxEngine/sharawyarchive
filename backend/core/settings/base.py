@@ -124,6 +124,8 @@ REST_FRAMEWORK = {
         'search': '30/min',
         'corrections': '10/hour',
         'clips': '5/hour',
+        'smart': '20/hour',
+        'smart_feedback': '60/hour',
     },
     # How many reverse proxies sit in front of this process. Everything that
     # identifies a client by address — the throttles and

@@ -24,6 +24,11 @@ DATABASES = {
         'PASSWORD': DB_PASSWORD,
         'HOST': DB_HOST,
         'PORT': DB_PORT,
+        # gunicorn runs gthread workers (smart search holds a thread for up
+        # to 40 s); keep each thread's connection instead of reconnecting
+        # per request, and let Django drop a broken one before reusing it.
+        'CONN_MAX_AGE': 60,
+        'CONN_HEALTH_CHECKS': True,
     }
 }
 

@@ -49,7 +49,10 @@ services:
       dockerfile: Dockerfile.prod
     container_name: shaarawy_prod_backend
     restart: always
-    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 60
+    # gthread: a smart-search request holds one thread for up to 40 s
+    # (SMART_REQUEST_BUDGET_S); with sync workers it would stall the site.
+    # Under gthread --timeout is a worker heartbeat, not a per-request cap.
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 4 --worker-class gthread --threads 8 --timeout 75 --graceful-timeout 60
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings.prod
       - SECRET_KEY=${SECRET_KEY}

@@ -17,7 +17,13 @@ from api.tests.factories import Archive
 from clips.models import Clip
 from corpus.models import Correction
 
-CONTRACT_RATES = {'search': '30/min', 'corrections': '10/hour', 'clips': '5/hour'}
+CONTRACT_RATES = {
+    'search': '30/min',
+    'corrections': '10/hour',
+    'clips': '5/hour',
+    'smart': '20/hour',
+    'smart_feedback': '60/hour',
+}
 TEST_LIMIT = 3
 
 

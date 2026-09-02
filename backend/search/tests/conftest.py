@@ -21,9 +21,17 @@ import respx
 from meilisearch.errors import MeilisearchApiError
 from pytest_django.fixtures import Settings
 
-from api.tests.factories import reset_throttles  # noqa: F401
+from api.tests.factories import api, reset_throttles  # noqa: F401
 from corpus.arabic import normalize_for_index
-from corpus.models import AudioAsset, Chunk, Segment, SegmentKind, Source, Transcript
+from corpus.models import (
+    AudioAsset,
+    Chunk,
+    Segment,
+    SegmentKind,
+    Source,
+    Transcript,
+    TranscriptWord,
+)
 from quran.models import Ayah, Surah
 from search import services
 
@@ -111,6 +119,32 @@ def _chunks(segment: Segment, texts: list[str]) -> list[Chunk]:
         )
         for idx, text in enumerate(texts)
     ]
+
+
+WORD_MS = 1_000
+"""Fixture words are one second apart inside their chunk."""
+
+
+def add_words(segment: Segment) -> list[TranscriptWord]:
+    """Word rows for every chunk of ``segment``, timed one second apart from
+    the chunk start, so a quote resolves to predictable milliseconds."""
+    rows: list[TranscriptWord] = []
+    idx = 0
+    for chunk in segment.transcript.chunks.order_by("idx"):
+        for offset, word in enumerate(chunk.text.split()):
+            start = int(chunk.start_ms) + offset * WORD_MS
+            rows.append(
+                TranscriptWord(
+                    transcript=segment.transcript,
+                    idx=idx,
+                    text=word,
+                    start_ms=start,
+                    end_ms=start + WORD_MS - 100,
+                    confidence=0.9,
+                )
+            )
+            idx += 1
+    return TranscriptWord.objects.bulk_create(rows)
 
 
 @pytest.fixture

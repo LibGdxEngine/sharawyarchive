@@ -149,6 +149,9 @@ The backend runs gunicorn with `gthread` workers (8 threads each) because one
 smart-search request holds a thread for up to `SMART_REQUEST_BUDGET_S` (40 s);
 `SMART_MAX_INFLIGHT` (default 3) caps how many run at once and the per-IP rate is
 20/hour. `SMART_ENABLED=false` keeps `POST /api/search/smart/` answering 503.
+`NEXT_PUBLIC_SMART_STREAMING=1` (frontend build arg) makes the smart page read
+the answer as server-sent events; confirm first that the edge passes a stream
+through (`docs/smart-search/phase-7.md`), otherwise leave it at `0`.
 
 ## 6a. Clips (rendering and downloads)
 

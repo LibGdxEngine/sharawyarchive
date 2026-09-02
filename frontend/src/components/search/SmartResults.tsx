@@ -48,7 +48,17 @@ export default function SmartResults({ question, kind, debug = false, transport 
     void play(`passage-${passage.passage_id}`, passage.segment_id, passage.start_ms);
 
   if (state.phase === "loading" || state.phase === "idle") {
-    return <SmartSkeleton stage={state.stage} slow={state.slow} />;
+    return (
+      <>
+        <SmartSkeleton stage={state.stage} slow={state.slow} />
+        <PassageList
+          passages={state.earlyPassages}
+          pendingKey={pendingKey}
+          failedKey={failedKey}
+          onPlay={playPassage}
+        />
+      </>
+    );
   }
   if (state.phase === "error" || state.response === null) {
     return (

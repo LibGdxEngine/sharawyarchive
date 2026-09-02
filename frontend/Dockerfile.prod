@@ -28,6 +28,11 @@ ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 
+# "1" makes the smart-search island read the answer as server-sent events
+# (docs/smart-search/phase-7.md); anything else is one POST.
+ARG NEXT_PUBLIC_SMART_STREAMING=0
+ENV NEXT_PUBLIC_SMART_STREAMING=$NEXT_PUBLIC_SMART_STREAMING
+
 # Server-side DSN; also what @sentry/nextjs uses to upload source maps.
 ARG SENTRY_DSN
 ENV SENTRY_DSN=$SENTRY_DSN

@@ -12,7 +12,7 @@ Phase-by-phase documentation for the two-mode search work. One phase = one branc
 | 4 — Generate, verify, API | [phase-4.md](phase-4.md) | `smart/phase-4-generate-verify-api` |
 | 5 — Frontend | [phase-5.md](phase-5.md) | `smart/phase-5-frontend` |
 | 6 — Eval and tuning | [phase-6.md](phase-6.md) + `eval-<YYYY-MM-DD>.json` | `smart/phase-6-eval` |
-| 7 — Streaming and prod | `phase-7.md` | `smart/phase-7-streaming` |
+| 7 — Streaming and prod | [phase-7.md](phase-7.md) | `smart/phase-7-streaming` |
 
 Evaluation reports are committed here as `eval-<YYYY-MM-DD>[-label].json` (ids and numbers only, no
 passage text) so regressions stay visible in diffs.

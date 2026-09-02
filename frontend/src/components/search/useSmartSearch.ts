@@ -2,12 +2,12 @@
 
 import { useEffect, useReducer } from "react";
 import {
-  fetchTransport,
+  defaultTransport,
   type SmartErrorKind,
   type SmartStage,
   type SmartTransport,
 } from "@/lib/smart-transport";
-import type { SmartFilters, SmartResponse } from "@/types/models";
+import type { SmartFilters, SmartPassage, SmartResponse } from "@/types/models";
 
 /** Stage copy by elapsed time — the API does not stream yet, so this is a clock. */
 export const STAGE_MESSAGES = [
@@ -24,6 +24,8 @@ export interface SmartSearchState {
   /** Index into {@link STAGE_MESSAGES}. */
   stage: 0 | 1 | 2;
   slow: boolean;
+  /** Passages a streaming transport delivered before the answer was written. */
+  earlyPassages: SmartPassage[];
   response: SmartResponse | null;
   error: SmartErrorKind | null;
   retryAfter: number | null;
@@ -33,6 +35,7 @@ type Action =
   | { type: "reset" }
   | { type: "start" }
   | { type: "stage"; stage: 1 | 2 }
+  | { type: "passages"; passages: SmartPassage[] }
   | { type: "slow" }
   | { type: "result"; response: SmartResponse }
   | { type: "error"; error: SmartErrorKind; retryAfter: number | null };
@@ -41,6 +44,7 @@ const IDLE: SmartSearchState = {
   phase: "idle",
   stage: 0,
   slow: false,
+  earlyPassages: [],
   response: null,
   error: null,
   retryAfter: null,
@@ -54,6 +58,8 @@ export function reduce(state: SmartSearchState, action: Action): SmartSearchStat
       return { ...IDLE, phase: "loading" };
     case "stage":
       return state.phase === "loading" ? { ...state, stage: action.stage } : state;
+    case "passages":
+      return state.phase === "loading" ? { ...state, earlyPassages: action.passages } : state;
     case "slow":
       return state.phase === "loading" ? { ...state, slow: true } : state;
     case "result":
@@ -86,7 +92,7 @@ export interface UseSmartSearchOptions {
  */
 export function useSmartSearch(
   question: string,
-  { filters, debug = false, transport = fetchTransport }: UseSmartSearchOptions = {},
+  { filters, debug = false, transport = defaultTransport }: UseSmartSearchOptions = {},
 ): SmartSearchState {
   const [state, dispatch] = useReducer(reduce, IDLE);
   const filtersKey = JSON.stringify(filters ?? null);
@@ -121,6 +127,8 @@ export function useSmartSearch(
           if (controller.signal.aborted && !timedOut) return;
           if (event.type === "stage") {
             dispatch({ type: "stage", stage: STAGE_INDEX[event.stage] });
+          } else if (event.type === "passages") {
+            dispatch({ type: "passages", passages: event.passages });
           } else if (event.type === "result") {
             dispatch({ type: "result", response: event.response });
           } else if (timedOut && event.error === "timeout") {

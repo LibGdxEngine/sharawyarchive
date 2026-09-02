@@ -317,3 +317,77 @@ def test_smart_answer_command_without_a_provider(provider: Provider) -> None:
     assert body["status"] == "degraded" and body["answer_md"] is None
     assert body["passages"] and body["debug"]["plan"]["rewrites"] == []
     assert provider.chat.call_count == 0
+
+
+def _events(raw: bytes) -> list[tuple[str, dict]]:
+    events = []
+    for block in raw.decode().split("\n\n"):
+        lines = [line for line in block.split("\n") if line and not line.startswith(":")]
+        if not lines:
+            continue
+        name = next(line[7:] for line in lines if line.startswith("event: "))
+        data = next(line[6:] for line in lines if line.startswith("data: "))
+        events.append((name, json.loads(data)))
+    return events
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_answer_streams_as_server_sent_events(
+    api: APIClient, provider: Provider, corpus: CorpusFixture
+) -> None:
+    """The pipeline runs on its own thread, so the fixture rows must be committed
+    (``transaction=True``) for it to see them."""
+    response = api.post(
+        URL, {"question": QUESTION}, format="json", HTTP_ACCEPT="text/event-stream"
+    )
+
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("text/event-stream")
+    assert response["Cache-Control"] == "no-store"
+    assert response["Content-Encoding"] == "identity"
+    assert response["X-Accel-Buffering"] == "no"
+    events = _events(b"".join(response.streaming_content))
+
+    names = [name for name, _ in events]
+    assert names == ["stage", "stage", "passages", "stage", "result"]
+    assert [data["stage"] for name, data in events if name == "stage"] == [
+        "retrieve",
+        "rerank",
+        "generate",
+    ]
+    passages_event = next(data for name, data in events if name == "passages")
+    assert passages_event["passages"] and "excerpt_display" in passages_event["passages"][0]
+    result = events[-1][1]
+    assert result["status"] == "answered"
+    assert result["citations"][0]["start_ms"] == CHUNK_MS
+    assert result["passages"] == passages_event["passages"]
+    assert SmartQuery.objects.filter(pk=result["query_id"]).exists()
+    assert budget.inflight_count() == 0  # the slot is released with the stream
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_cache_hit_streams_only_the_result(api: APIClient, provider: Provider) -> None:
+    api.post(URL, {"question": QUESTION}, format="json")
+
+    response = api.post(
+        URL, {"question": QUESTION}, format="json", HTTP_ACCEPT="text/event-stream"
+    )
+    events = _events(b"".join(response.streaming_content))
+
+    assert [name for name, _ in events] == ["result"]
+    assert events[0][1]["cache_hit"] is True
+
+
+def test_streaming_still_honours_the_concurrency_cap(
+    api: APIClient, provider: Provider, smart_settings: Settings
+) -> None:
+    now = time.time()
+    budget.redis_client().zadd(
+        budget.INFLIGHT_KEY, {f"busy-{n}": now for n in range(smart_settings.SMART_MAX_INFLIGHT)}
+    )
+
+    response = api.post(
+        URL, {"question": QUESTION}, format="json", HTTP_ACCEPT="text/event-stream"
+    )
+
+    assert response.status_code == 429 and response["Retry-After"] == "10"

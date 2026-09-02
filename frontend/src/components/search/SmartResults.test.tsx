@@ -168,6 +168,29 @@ describe("SmartResults", () => {
     expect(slow.calls[1].aborted).toBe(false);
   });
 
+  it("shows streamed passages while the answer is still being written", async () => {
+    const early = transportOf(
+      [
+        { type: "stage", stage: "rerank" },
+        { type: "passages", passages: RESPONSE.passages },
+        { type: "result", response: RESPONSE },
+      ],
+      100_000,
+    );
+    render(<SmartResults question="سؤال" kind={undefined} transport={early} />);
+    await flush();
+    expect(screen.queryByText(/الإيمان بالله وحده/)).toBeNull();
+
+    // A transport that yields before its delay: emulate by a second, instant one.
+    const instant = transportOf([
+      { type: "passages", passages: RESPONSE.passages },
+    ]);
+    render(<SmartResults question="آخر" kind={undefined} transport={instant} />);
+    await flush();
+    expect(screen.getByText(/الإيمان بالله وحده/)).toBeTruthy();
+    expect(screen.getAllByRole("status").length).toBeGreaterThan(0);
+  });
+
   it("gives up after the client timeout", async () => {
     const stuck = transportOf([{ type: "result", response: RESPONSE }], 10 * CLIENT_TIMEOUT_MS);
     render(<SmartResults question="سؤال" kind={undefined} transport={stuck} />);

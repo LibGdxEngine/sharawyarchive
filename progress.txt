@@ -135,3 +135,8 @@ $ psql -d restore_check: topics=2, words=187, clips table present
 ## Smart search — Phase 6 eval tooling (2026-09-02)
 - smart_label (segments behind the fused candidates, for labelling), smart_eval --stage full (status vs expected, abstention accuracy + confusion, citation validity, latency, cost, optional --judge via SMART_JUDGE_MODEL with the budget check off), report.summarize()/gates() with the ship gates (recall@8 ≥ .80, abstention ≥ .90, citation validity ≥ .95, unsupported ≤ 5 %, p95 ≤ 15 s).
 - The eval run itself waits for the prod rollout (passages built + embedded) and the owner's 60–100 golden items. SMART_ENABLED stays off.
+
+## Smart search — Phase 7 streaming (2026-09-02)
+- POST /api/search/smart/ with Accept: text/event-stream → SSE (stage / passages / result / error, `: ping` every 10 s, Content-Encoding identity, X-Accel-Buffering no); pipeline on a helper thread via RunContext.on_event; slot held to the end; cache hit streams result only.
+- Frontend parseSse + streamTransport (falls back to a one-piece JSON answer), earlyPassages shown under the skeleton; NEXT_PUBLIC_SMART_STREAMING build flag (default 0) in Dockerfile.prod and compose.
+- Left for the owner after merges: Phase 2 rollout (build/embed passages, index_chunks), the golden set and the Phase 6 eval run, the Caddy SSE spike, then SMART_ENABLED=true.

@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import queue
+import threading
+from collections.abc import Iterator
+from contextlib import ExitStack
 from dataclasses import asdict
+from typing import Any
 
 from django.conf import settings
+from django.db import connection
+from django.http import StreamingHttpResponse
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.exceptions import Throttled
+from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -33,6 +43,32 @@ from .smart.throttles import SmartRateThrottle
 
 SMART_OFF_DETAIL = "البحث الذكي غير متاح حاليًا."
 INFLIGHT_RETRY_S = 10
+SSE_PING_S = 10.0
+"""A comment line every so often keeps proxies from timing out an idle stream."""
+STREAM_ERROR_DETAIL = "تعذّر إكمال الإجابة."
+
+logger = logging.getLogger(__name__)
+
+
+class EventStreamRenderer(BaseRenderer):
+    """Lets DRF's content negotiation accept ``Accept: text/event-stream``.
+
+    The stream itself is a plain :class:`StreamingHttpResponse` that never
+    goes through a renderer; this only renders the DRF responses that can
+    precede it (a 400 or a 429), as JSON, so a streaming client still gets a
+    readable error body.
+    """
+
+    media_type = "text/event-stream"
+    format = "sse"
+
+    def render(
+        self,
+        data: Any,
+        accepted_media_type: str | None = None,
+        renderer_context: dict[str, Any] | None = None,
+    ) -> bytes:
+        return json.dumps(data, ensure_ascii=False).encode()
 
 
 def _optional_int(request: Request, name: str) -> int | None:
@@ -129,10 +165,17 @@ class SmartSearchView(APIView):
     concurrency cap, which is held for the whole request. ``debug`` output is
     reserved for staff sessions. Never cached by clients: the server keeps its
     own answer cache.
+
+    With ``Accept: text/event-stream`` the same POST answers as server-sent
+    events — ``stage`` lines as the pipeline advances, ``passages`` as soon as
+    the reranked passages are known (sources visible within seconds), then one
+    ``result`` carrying the full verified response, or ``error``. No token
+    stream: the answer must pass the verifier before anyone sees a quote.
     """
 
     throttle_classes = [SmartRateThrottle]
     throttle_scope = "smart"
+    renderer_classes = [JSONRenderer, EventStreamRenderer]
 
     def get_throttles(self) -> list[SmartRateThrottle]:
         return super().get_throttles() if settings.SMART_ENABLED else []
@@ -167,11 +210,65 @@ class SmartSearchView(APIView):
             user=user,
             debug=bool(data.get("debug")) and bool(getattr(user, "is_staff", False)),
         )
-        with smart_budget.inflight_slot() as acquired:
-            if not acquired:
-                raise Throttled(wait=INFLIGHT_RETRY_S)
+        slot = ExitStack()
+        if not slot.enter_context(smart_budget.inflight_slot()):
+            slot.close()
+            raise Throttled(wait=INFLIGHT_RETRY_S)
+        if "text/event-stream" in request.META.get("HTTP_ACCEPT", ""):
+            return _stream_smart_search(data["question"], filters, run, slot)
+        with slot:
             response = pipeline.run_smart_search(data["question"], filters=filters, run=run)
         return _no_store(Response(response.model_dump()))
+
+
+def _sse(event: str, data: Any) -> bytes:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
+
+
+def _stream_smart_search(
+    question: str, filters: retrieval.Filters, run: pipeline.RunContext, slot: ExitStack
+) -> StreamingHttpResponse:
+    """Run the pipeline on a helper thread and relay its events as they come.
+
+    The in-flight ``slot`` is released when the stream ends, however it ends.
+    ``Content-Encoding: identity`` makes GZipMiddleware leave the body alone
+    (it would otherwise buffer it whole); ``X-Accel-Buffering: no`` asks the
+    proxy to do the same.
+    """
+    events: queue.Queue[tuple[str, Any] | None] = queue.Queue()
+    run.on_event = lambda name, data: events.put((name, data))
+
+    def work() -> None:
+        try:
+            response = pipeline.run_smart_search(question, filters=filters, run=run)
+            events.put(("result", response.model_dump()))
+        except Exception:  # noqa: BLE001 — the reader gets an error event, the log the trace
+            logger.exception("smart: streaming request failed")
+            events.put(("error", {"detail": STREAM_ERROR_DETAIL}))
+        finally:
+            connection.close()  # this thread's own database connection
+            events.put(None)
+
+    def generate() -> Iterator[bytes]:
+        threading.Thread(target=work, name="smart-search", daemon=True).start()
+        try:
+            while True:
+                try:
+                    item = events.get(timeout=SSE_PING_S)
+                except queue.Empty:
+                    yield b": ping\n\n"
+                    continue
+                if item is None:
+                    return
+                yield _sse(*item)
+        finally:
+            slot.close()
+
+    response = StreamingHttpResponse(generate(), content_type="text/event-stream")
+    response["Cache-Control"] = "no-store"
+    response["Content-Encoding"] = "identity"
+    response["X-Accel-Buffering"] = "no"
+    return response
 
 
 class SmartFeedbackView(APIView):

@@ -51,8 +51,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Absolute URL of an API path, for callers that cannot go through apiFetch. */
+export function apiUrl(path: string): string {
+  return `${BASE_URL}${path}`;
+}
+
 /** `Retry-After` as whole seconds, or null when absent or an HTTP-date. */
-function parseRetryAfter(res: Response): number | null {
+export function parseRetryAfter(res: Response): number | null {
   const raw = res.headers.get("Retry-After");
   if (raw === null) return null;
   const seconds = Number.parseInt(raw, 10);

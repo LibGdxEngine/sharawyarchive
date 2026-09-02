@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -61,6 +61,14 @@ class RunContext:
     reranker: rerank.Reranker | None = None
     use_llm: bool = True
     """``False`` = no provider at all: naive plan, lexical retrieval, fused order, no answer."""
+    on_event: Callable[[str, dict[str, Any]], None] | None = None
+    """Progress sink for a streaming response: ``("stage", {"stage": …})`` as each
+    stage begins and ``("passages", {"passages": […]})`` as soon as the
+    reranked passages are known. Never called for a cache hit."""
+
+    def emit(self, name: str, data: dict[str, Any]) -> None:
+        if self.on_event is not None:
+            self.on_event(name, data)
 
 
 @dataclass
@@ -231,6 +239,7 @@ def run_smart_search(
         trace.stage("plan", started, note="naive")
 
     # 2. retrieve
+    run.emit("stage", {"stage": "retrieve"})
     started = time.monotonic()
     found = retrieval.retrieve(
         question, plan, filters=filters, deadline=deadline, use_llm=run.use_llm
@@ -254,6 +263,7 @@ def run_smart_search(
         return response
 
     # 3. rerank
+    run.emit("stage", {"stage": "rerank"})
     started = time.monotonic()
     reranker = run.reranker or (
         rerank.LLMListwiseReranker() if run.use_llm else rerank.NoopReranker()
@@ -268,6 +278,7 @@ def run_smart_search(
     if outcome.scored:
         trace.models["rerank"] = settings.SMART_RERANK_MODEL
     passages_out = _passages_out(outcome.passages)
+    run.emit("passages", {"passages": [row.model_dump() for row in passages_out]})
 
     # 4. context
     started = time.monotonic()
@@ -275,6 +286,7 @@ def run_smart_search(
     trace.stage("context", started)
 
     # 5 + 6. generate and verify
+    run.emit("stage", {"stage": "generate"})
     status: str = "degraded"
     answer_md: str | None = None
     citations: list[Any] = []

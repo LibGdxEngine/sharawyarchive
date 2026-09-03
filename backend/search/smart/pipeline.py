@@ -175,7 +175,7 @@ def _record(
             candidate_ids=[c.passage_id for c in found.candidates] if found else [],
             reranked=[item.model_dump() for item in reranked] or None,
             answer=response.model_dump(exclude={"debug"}),
-            status=response.status if not error else "error",
+            status=response.status,
             models_used=trace.models,
             prompt_version=PROMPT_VERSION,
             usage={
@@ -342,6 +342,9 @@ def run_smart_search(
     _record(
         question=question, filters=filters, run=run, response=response, trace=trace,
         plan=plan, found=found, reranked=outcome.passages,
+        # Without this a degraded row says only "degraded"; the reason lived in
+        # the container log, which is the wrong place to debug a bad answer from.
+        error="; ".join(trace.warnings) if status == "degraded" else "",
     )
     return response
 

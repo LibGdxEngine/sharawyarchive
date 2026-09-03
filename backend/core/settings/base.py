@@ -216,6 +216,20 @@ SMART_MAX_INFLIGHT = int(os.environ.get('SMART_MAX_INFLIGHT', '3'))
 # Whole-request budget; each stage is given min(its timeout, what is left).
 SMART_REQUEST_BUDGET_S = float(os.environ.get('SMART_REQUEST_BUDGET_S', '40'))
 SMART_STAGE_TIMEOUTS_S = {'planner': 8.0, 'embed': 6.0, 'rerank': 12.0, 'generate': 30.0}
+# Completion budget for the generator. Thinking models bill their reasoning
+# against this same cap — medium effort on a tafseer question was measured at
+# ~1,650 reasoning tokens — so the answer needs room well beyond its own length
+# or the JSON arrives cut off mid-string.
+SMART_GENERATOR_MAX_TOKENS = int(os.environ.get('SMART_GENERATOR_MAX_TOKENS', '4000'))
+# Tried in order by OpenRouter when the first model errors (it rate-limits its
+# shared Google endpoint under load). Empty disables failover.
+SMART_GENERATOR_FALLBACK_MODELS = [
+    model
+    for model in os.environ.get(
+        'SMART_GENERATOR_FALLBACK_MODELS', 'google/gemini-3.1-flash-lite'
+    ).split(',')
+    if model.strip()
+]
 SMART_CACHE_TTL_S = 7 * 24 * 3600
 # rapidfuzz partial_ratio_alignment score a quote must reach to be cited.
 SMART_QUOTE_MIN_SCORE = int(os.environ.get('SMART_QUOTE_MIN_SCORE', '90'))

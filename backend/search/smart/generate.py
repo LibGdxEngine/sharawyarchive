@@ -23,11 +23,22 @@ __all__ = ["MIN_ARABIC_RATIO", "generate", "is_arabic"]
 logger = logging.getLogger(__name__)
 
 MIN_ARABIC_RATIO = 0.7
+RETRY_TOKEN_FACTOR = 2
+"""The retry doubles the completion budget…"""
+RETRY_REASONING_EFFORT = "low"
+"""…and thinks less, so the extra budget reaches the answer rather than the
+scratchpad. The first attempt keeps ``medium`` for quality; the second exists
+to produce *something* usable."""
 _ARABIC = re.compile(r"[؀-ۿ]")
 _LETTER = re.compile(r"[^\W\d_]")
 _RETRY_NOTE = (
     "\n\nThe previous answer was rejected. "
     "Answer in Arabic and match the JSON schema exactly."
+)
+_TRUNCATED_NOTE = (
+    "\n\nThe previous answer was cut off before it finished. "
+    "Answer again, complete and self-contained, at most 120 words, "
+    "with at most three citations."
 )
 
 
@@ -37,6 +48,11 @@ def is_arabic(text: str) -> bool:
     if not letters:
         return False
     return len(_ARABIC.findall(text)) / len(letters) >= MIN_ARABIC_RATIO
+
+
+def _note(error: llm.LLMError | None) -> str:
+    """What to tell the model on the retry, given how the first answer failed."""
+    return _TRUNCATED_NOTE if isinstance(error, llm.LLMTruncated) else _RETRY_NOTE
 
 
 def _user_message(question: str, plan: QueryPlan, passages: Sequence[ContextPassage]) -> str:
@@ -58,18 +74,21 @@ def generate(
     user = _user_message(question, plan, passages)
     usages: list[Usage] = []
     last_error: llm.LLMError | None = None
+    base_tokens = settings.SMART_GENERATOR_MAX_TOKENS
     for attempt in range(2):
+        retrying = attempt > 0
         try:
             answer, usage = llm.chat_json(
                 role="generator",
                 model=settings.SMART_GENERATOR_MODEL,
                 system=system,
-                user=user if attempt == 0 else user + _RETRY_NOTE,
+                user=user + _note(last_error) if retrying else user,
                 schema=GeneratedAnswer,
                 timeout_s=settings.SMART_STAGE_TIMEOUTS_S["generate"],
                 deadline=deadline,
-                reasoning_effort="medium",
-                max_tokens=1800,
+                reasoning_effort=RETRY_REASONING_EFFORT if retrying else "medium",
+                max_tokens=base_tokens * RETRY_TOKEN_FACTOR if retrying else base_tokens,
+                fallback_models=settings.SMART_GENERATOR_FALLBACK_MODELS,
             )
         except llm.LLMSchemaError as error:
             last_error = error

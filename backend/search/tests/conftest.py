@@ -278,6 +278,8 @@ def smart_settings(settings: Settings) -> Settings:
     settings.SMART_EMBEDDING_MODEL = "test/embed"
     settings.SMART_EMBEDDING_DIMENSIONS = 8
     settings.SMART_DAILY_BUDGET_USD = 5.0
+    settings.SMART_GENERATOR_MAX_TOKENS = 100
+    settings.SMART_GENERATOR_FALLBACK_MODELS = ["test/fallback"]
     settings.SMART_PRICES_USD_PER_MTOKEN = {"test/planner": (1.0, 2.0), "test/embed": (0.5, 0.0)}
     return settings
 

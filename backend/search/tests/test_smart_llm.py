@@ -275,3 +275,56 @@ def test_fit_vector_and_query_format() -> None:
         llm.fit_vector([1.0], 2)
     assert llm.format_query("الصبر").startswith("Instruct: ")
     assert llm.format_query("الصبر").endswith("Query: الصبر")
+
+
+# --- truncation and failover ----------------------------------------------------
+
+
+def test_a_truncated_answer_is_reported_as_such(openrouter: respx.MockRouter) -> None:
+    """The JSON stops mid-string; the useful fact is the token cap, not the parse error."""
+    openrouter.post("/chat/completions").mock(
+        return_value=chat_completion(
+            '{"intent": "opinion", "topic_ar": "الصب',
+            model="test/planner",
+            completion_tokens=799,
+            finish_reason="length",
+        )
+    )
+
+    with pytest.raises(llm.LLMTruncated) as caught:
+        _call_planner(max_tokens=800)
+
+    message = str(caught.value)
+    assert "max_tokens" in message and "799/800" in message
+    # Callers that catch the general schema error still catch this.
+    assert isinstance(caught.value, llm.LLMSchemaError)
+
+
+def test_a_truncated_answer_with_no_content_is_still_a_truncation(
+    openrouter: respx.MockRouter,
+) -> None:
+    """Reasoning can eat the whole budget, leaving nothing — not "no content"."""
+    openrouter.post("/chat/completions").mock(
+        return_value=chat_completion("", model="test/planner", finish_reason="length")
+    )
+
+    with pytest.raises(llm.LLMTruncated):
+        _call_planner()
+
+
+def test_fallback_models_are_offered_to_the_router(openrouter: respx.MockRouter) -> None:
+    route = _plan(openrouter)
+
+    _call_planner(fallback_models=["test/second", "test/third"])
+
+    body = request_json(route.calls.last.request)
+    assert body["models"] == ["test/planner", "test/second", "test/third"]
+
+
+def test_no_fallback_models_means_no_models_key(openrouter: respx.MockRouter) -> None:
+    route = _plan(openrouter)
+
+    _call_planner()
+
+    assert "models" not in request_json(route.calls.last.request)
+

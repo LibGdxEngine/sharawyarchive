@@ -38,6 +38,7 @@ __all__ = [
     "LLMError",
     "LLMSchemaError",
     "LLMTimeout",
+    "LLMTruncated",
     "chat_json",
     "client",
     "embed",
@@ -69,6 +70,17 @@ class LLMTimeout(LLMError):
 
 class LLMSchemaError(LLMError):
     """The provider answered, but not in the requested shape."""
+
+
+class LLMTruncated(LLMSchemaError):
+    """The answer hit ``max_tokens`` and stops mid-JSON.
+
+    Its own subclass because the remedy is specific and the generic schema
+    error is actively misleading here: the model did nothing wrong, it simply
+    ran out of completion budget — reasoning tokens are billed against the
+    same cap — so the fix is a larger cap or less thinking, not a reworded
+    prompt.
+    """
 
 
 class BudgetExhausted(LLMError):
@@ -169,6 +181,7 @@ def chat_json[T: BaseModel](
     temperature: float = 0.0,
     max_tokens: int = 1200,
     check_budget: bool = True,
+    fallback_models: Sequence[str] = (),
 ) -> tuple[T, Usage]:
     """One chat completion that must come back as a ``schema`` instance.
 
@@ -176,8 +189,10 @@ def chat_json[T: BaseModel](
     Raises :class:`BudgetExhausted` before calling when today's cap is
     reached (unless ``check_budget`` is off — offline evaluation spends from
     its own pocket), :class:`LLMTimeout` when the call or the deadline runs
-    out, :class:`LLMSchemaError` when the answer does not validate, and
-    :class:`LLMError` for anything else the provider does.
+    out, :class:`LLMTruncated` when it stops at ``max_tokens``,
+    :class:`LLMSchemaError` when the answer does not validate, and
+    :class:`LLMError` for anything else the provider does. ``fallback_models``
+    are handed to OpenRouter to try in order when ``model`` itself errors.
     """
     if check_budget and budget.over_budget():
         raise BudgetExhausted(f"{role}: daily smart-search budget reached")
@@ -188,6 +203,8 @@ def chat_json[T: BaseModel](
     }
     if reasoning_effort:
         extra_body["reasoning"] = {"effort": reasoning_effort}
+    if fallback_models:
+        extra_body["models"] = [model, *fallback_models]
     request: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -224,7 +241,17 @@ def chat_json[T: BaseModel](
         raise LLMError(f"{role}: {model}: {error}") from error
     latency_ms = int((time.monotonic() - started) * 1000)
 
-    content = completion.choices[0].message.content if completion.choices else None
+    choice = completion.choices[0] if completion.choices else None
+    # Checked before the content is even looked at: a truncated answer is
+    # often *empty* (reasoning consumed the whole budget), and reporting that
+    # as "returned no content" hides the one fact that explains it.
+    if choice is not None and getattr(choice, "finish_reason", None) == "length":
+        spent = int(getattr(completion.usage, "completion_tokens", 0) or 0)
+        raise LLMTruncated(
+            f"{role}: {model} hit max_tokens ({spent}/{max_tokens} completion tokens, "
+            f"reasoning included) and returned incomplete JSON"
+        )
+    content = choice.message.content if choice is not None else None
     if not content:
         raise LLMSchemaError(f"{role}: {model} returned no content")
     try:

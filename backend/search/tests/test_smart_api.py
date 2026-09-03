@@ -208,7 +208,11 @@ def test_a_generator_failure_degrades_but_keeps_the_passages(
     assert response.status_code == 200
     assert body["status"] == "degraded" and body["answer_md"] is None
     assert body["citations"] == [] and body["passages"]
-    assert SmartQuery.objects.get(pk=body["query_id"]).status == "degraded"
+    row = SmartQuery.objects.get(pk=body["query_id"])
+    assert row.status == "degraded"
+    # The row must say *why*, or a degraded answer can only be debugged from
+    # container logs — which is how this class of bug stayed invisible.
+    assert row.error.startswith("generate:") and "test/generator" in row.error
 
     # Not cached: the next request tries again.
     provider.generator_fails = False

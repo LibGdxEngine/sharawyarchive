@@ -27,8 +27,13 @@ def chat_completion(
     cost: float | None = 0.001,
     prompt_tokens: int = 100,
     completion_tokens: int = 50,
+    finish_reason: str = "stop",
 ) -> httpx.Response:
-    """A ``chat.completion`` whose assistant message is ``payload`` as JSON text."""
+    """A ``chat.completion`` whose assistant message is ``payload`` as JSON text.
+
+    ``finish_reason="length"`` is how a provider reports that it stopped at
+    ``max_tokens`` — the answer is then whatever fragment it managed.
+    """
     if isinstance(payload, BaseModel):
         content = payload.model_dump_json()
     elif isinstance(payload, str):
@@ -53,7 +58,7 @@ def chat_completion(
                 {
                     "index": 0,
                     "message": {"role": "assistant", "content": content},
-                    "finish_reason": "stop",
+                    "finish_reason": finish_reason,
                 }
             ],
             "usage": usage,

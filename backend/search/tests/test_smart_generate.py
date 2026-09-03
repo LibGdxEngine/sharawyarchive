@@ -98,3 +98,53 @@ def test_two_failures_raise(openrouter: respx.MockRouter) -> None:
 )
 def test_is_arabic(text: str, arabic: bool) -> None:
     assert generate.is_arabic(text) is arabic
+
+
+def test_a_truncated_answer_is_retried_with_more_room_and_less_thinking(
+    openrouter: respx.MockRouter,
+) -> None:
+    """The remedy for a cut-off answer is budget, not a reworded prompt."""
+    route = openrouter.post("/chat/completions").mock(
+        side_effect=[
+            chat_completion(
+                '{"status": "answered", "answer_md": "قال الش',
+                model="test/generator",
+                finish_reason="length",
+            ),
+            chat_completion(ANSWER, model="test/generator"),
+        ]
+    )
+
+    answer, usages = generate.generate("سؤال", [PASSAGE], planner.naive_plan("سؤال"))
+
+    assert route.call_count == 2 and len(usages) == 1
+    first, second = (request_json(call.request) for call in route.calls)
+    assert first["max_tokens"] == 100 and first["reasoning"] == {"effort": "medium"}
+    assert second["max_tokens"] == 200 and second["reasoning"] == {"effort": "low"}
+    assert "cut off" in second["messages"][1]["content"]
+    assert "match the JSON schema" not in second["messages"][1]["content"]
+    assert first["models"] == ["test/generator", "test/fallback"]
+    assert answer.answer_md == ANSWER["answer_md"]
+
+
+def test_a_schema_failure_keeps_the_schema_wording(openrouter: respx.MockRouter) -> None:
+    openrouter.post("/chat/completions").mock(
+        side_effect=[
+            chat_completion({"status": "answered"}, model="test/generator"),
+            chat_completion(ANSWER, model="test/generator"),
+        ]
+    )
+
+    generate.generate("سؤال", [PASSAGE], planner.naive_plan("سؤال"))
+
+
+def test_two_truncations_raise_the_truncation_error(openrouter: respx.MockRouter) -> None:
+    openrouter.post("/chat/completions").mock(
+        return_value=chat_completion(
+            '{"status": "ans', model="test/generator", finish_reason="length"
+        )
+    )
+
+    with pytest.raises(llm.LLMTruncated):
+        generate.generate("سؤال", [PASSAGE], planner.naive_plan("سؤال"))
+

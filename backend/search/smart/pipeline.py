@@ -141,7 +141,7 @@ def _debug_payload(
         else [],
         "warnings": trace.warnings,
         "verify": verified_notes,
-        "timings": [timing.model_dump() for timing in trace.timings],
+        "timings": [timing.model_dump(mode="json") for timing in trace.timings],
         "models": trace.models,
         "cost_usd": str(trace.cost),
     }

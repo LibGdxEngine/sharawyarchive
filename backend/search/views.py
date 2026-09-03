@@ -241,7 +241,7 @@ def _stream_smart_search(
     def work() -> None:
         try:
             response = pipeline.run_smart_search(question, filters=filters, run=run)
-            events.put(("result", response.model_dump()))
+            events.put(("result", response.model_dump(mode="json")))
         except Exception:  # noqa: BLE001 — the reader gets an error event, the log the trace
             logger.exception("smart: streaming request failed")
             events.put(("error", {"detail": STREAM_ERROR_DETAIL}))

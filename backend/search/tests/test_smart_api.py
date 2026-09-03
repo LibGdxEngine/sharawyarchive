@@ -391,3 +391,14 @@ def test_streaming_still_honours_the_concurrency_cap(
     )
 
     assert response.status_code == 429 and response["Retry-After"] == "10"
+
+
+def test_smart_answer_command_with_the_provider_prints_json(provider: Provider) -> None:
+    """The debug block carries Decimal costs; the command must still print JSON."""
+    out = io.StringIO()
+    call_command("smart_answer", QUESTION, "--debug", stdout=out)
+
+    body = json.loads(out.getvalue())
+    assert body["status"] == "answered"
+    timings = {t["stage"]: t for t in body["debug"]["timings"]}
+    assert timings["plan"]["usage"]["cost_usd"] is not None

@@ -26,4 +26,7 @@ class Command(BaseCommand):
             filters=retrieval.Filters(surah=options["surah"], source_id=options["source_id"]),
             run=pipeline.RunContext(debug=options["debug"], use_llm=not options["no_llm"]),
         )
-        self.stdout.write(json.dumps(response.model_dump(), ensure_ascii=False, indent=1))
+        # mode="json": the debug block carries Decimal costs, which json.dumps refuses.
+        self.stdout.write(
+            json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=1)
+        )
